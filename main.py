@@ -142,11 +142,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 'Subtract': {'Name': 'Subtract', 'Method': 'Vertical',
                              'Setting 1': '0', 'Setting 2': '', 'Checked': 0},
                 'Divide': {'Name': 'Divide', 'Method': 'Z',
-                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
-                'Correct G': {'Name': 'Correct G', 'Method': 'uS',
-                             'Setting 1': '4120', 'Setting 2': '4120', 'Checked': 2},
-                'Correct V': {'Name': 'Correct V', 'Method': 'Y',
-                             'Setting 1': '4120', 'Setting 2': '4120', 'Checked': 2}}                  
+                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2}}                  
         self.filters_combobox.addItem('<Add Filter>')
         self.filters_combobox.addItems(filters.get_list())
         table = self.filters_table
