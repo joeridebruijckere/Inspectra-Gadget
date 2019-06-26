@@ -827,6 +827,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         plot_data.linecut_window.running = True
                         plot_data.update_linecut()
                         self.canvas.draw()
+                        plot_data.linecut_window.activateWindow()
                     elif event.button == 3:
                         print('rightmouseclickplot')
                         menu = QtWidgets.QMenu(self)
