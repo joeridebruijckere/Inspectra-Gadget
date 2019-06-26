@@ -1216,7 +1216,7 @@ class Data3D:
         if 'lockin_curr/X' in self.channels:
             lockin_index = self.channels.index('lockin_curr/X')
             if lockin_index in self.columns[:3-(self.settings['2D']=='True')]:
-                print('Correcting source for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
+                print('Correcting lockin_curr/X for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
                 for instrument in self.meta_data['register']['instruments']:
                     if instrument['name'] == 'lockin_curr':
                         break
