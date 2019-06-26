@@ -18,7 +18,7 @@ def apply(data, filter_settings):
                        'Absolute': absolute, 'Multiply': mulitply, 'Slope': slope, 
                        'Logarithm': logarithm, 'Curvature': curvature,
                        'Band cut': band_cut, 'Interp': interpolate,
-                       'Subtract': subtract_trace, 'Divide': divide, '-RCfilters': subtract_R_filters}
+                       'Subtract': subtract_trace, 'Divide': divide}
     filtered_data = filter_functions[filter_settings['Name']](data, filter_settings['Method'],
                            filter_settings['Setting 1'], filter_settings['Setting 2'])
     return filtered_data
@@ -40,8 +40,7 @@ def get_list(filter_name=''):
             'Offset': ['X','Y','Z'], 'Absolute': [], 'Multiply': ['X','Y','Z'], 
             'Slope': [], 'Logarithm': ['log10','ln'], 'Curvature': ['X','Y'],
             'Band cut': ['Y', 'X'], 'Interp': ['linear','cubic','quintic'],
-            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z'],
-            '-RCfilters': ['uS','S','e^2/h','G0']}
+            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z']}
     if filter_name:
         return_list = filter_methods[filter_name]
     else:
@@ -277,17 +276,4 @@ def subtract_trace(data, method, index, setting2):
 def divide(data, method, setting1, setting2):
     axis = {'X': 0, 'Y': 1, 'Z': 2}
     data[axis[method]] /= float(setting1)
-    return data
-
-def subtract_R_filters(data, method, setting1, setting2):
-    r_filters = float(setting1) + float(setting2)
-    if method == 'uS':
-        r_filters *= 1e-6
-    elif method == 'S':
-        r_filters *= 1.0
-    elif method == 'e^2/h':
-        r_filters *= 3.8740e-5
-    elif method == 'G0':
-        r_filters *= 7.7481e-5
-    data[2] = data[2]/(1.0-r_filters*data[2])
     return data

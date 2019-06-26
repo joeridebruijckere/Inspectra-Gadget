@@ -4,13 +4,14 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on June 21 2019
+Last updated on June 26 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys, os, copy, json
 import numpy as np
 from scipy.interpolate import griddata
+from scipy.ndimage import map_coordinates
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -141,9 +142,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 'Subtract': {'Name': 'Subtract', 'Method': 'Vertical',
                              'Setting 1': '0', 'Setting 2': '', 'Checked': 0},
                 'Divide': {'Name': 'Divide', 'Method': 'Z',
-                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
-                '-RCfilters': {'Name': '-RCfilters', 'Method': 'uS',
-                             'Setting 1': '4120', 'Setting 2': '4120', 'Checked': 2}}                  
+                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2}}                  
         self.filters_combobox.addItem('<Add Filter>')
         self.filters_combobox.addItems(filters.get_list())
         table = self.filters_table
@@ -207,35 +206,35 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
 
     def open_files(self, filenames=None):
         print('open_files')
-    #try:
-        if not filenames:
-            filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
-                    self, 'Open File', '', 'Data Files (*.dat *.npy)')
-        if filenames:
-            self.file_list.itemChanged.disconnect(self.file_checked)
-            for filename in filenames:
-                print('Open '+filename)
-                if filename.split('.')[-1] == 'dat':
-                    self.add_file(filename)
-                elif filename.split('.')[-1] == 'npy':
-                    loaded_session = np.load(filename, allow_pickle=True)
-                    for session_item in loaded_session:
-                        self.add_file(session_item['File Name'], data=session_item['Raw Data'])
-                        item = self.file_list.item(self.file_list.count()-1)
-                        data = item.data(QtCore.Qt.UserRole)
-                        data.settings = session_item['Settings']
-                        data.filters = session_item['Filters']
-                        data.view_settings = session_item['View Settings']
-                        data.apply_all_filters(update_color_limits=False)
-            last_item = self.file_list.item(self.file_list.count()-1)
-            self.file_list.setCurrentItem(last_item)
-            for item_index in range(self.file_list.count()-1):
-                self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-            self.show_current_all()
-            self.file_list.itemChanged.connect(self.file_checked)
-            last_item.setCheckState(QtCore.Qt.Checked)
-    #except:
-     #   print('Could not open file(s)...')
+        try:
+            if not filenames:
+                filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                        self, 'Open File', '', 'Data Files (*.dat *.npy)')
+            if filenames:
+                self.file_list.itemChanged.disconnect(self.file_checked)
+                for filename in filenames:
+                    print('Open '+filename)
+                    if filename.split('.')[-1] == 'dat':
+                        self.add_file(filename)
+                    elif filename.split('.')[-1] == 'npy':
+                        loaded_session = np.load(filename, allow_pickle=True)
+                        for session_item in loaded_session:
+                            self.add_file(session_item['File Name'], data=session_item['Raw Data'])
+                            item = self.file_list.item(self.file_list.count()-1)
+                            data = item.data(QtCore.Qt.UserRole)
+                            data.settings = session_item['Settings']
+                            data.filters = session_item['Filters']
+                            data.view_settings = session_item['View Settings']
+                            data.apply_all_filters(update_color_limits=False)
+                last_item = self.file_list.item(self.file_list.count()-1)
+                self.file_list.setCurrentItem(last_item)
+                for item_index in range(self.file_list.count()-1):
+                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+                self.show_current_all()
+                self.file_list.itemChanged.connect(self.file_checked)
+                last_item.setCheckState(QtCore.Qt.Checked)
+        except:
+            print('Could not open file(s)...')
             
     def add_file(self, file, data=None):
         print('add_file')
@@ -268,12 +267,12 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     
     def file_checked(self, item):
         print('file_checked')
-    #try:
-        self.update_plots()
-        if item.checkState() == 2:
-            self.file_list.setCurrentItem(item)
-    #except:
-    #    print('Could not update plot(s)...')
+        try:
+            self.update_plots()
+            if item.checkState() == 2:
+                self.file_list.setCurrentItem(item)
+        except:
+            print('Could not update plot(s)...')
     
     def file_clicked(self):
         print('file_clicked')
@@ -282,7 +281,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         except:
             print('Could not show current settings...')
     
-    def update_plots(self, update_linecut=True):
+    def update_plots(self):
         print('update_plots')
         self.figure.clear()
         file_list = self.file_list
@@ -299,13 +298,18 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     data.add_plot_2d()
                 else:
                     data.add_plot()
-                    if update_linecut:
-                        if data.linecut_window:
-                            if data.linecut_window.running == True:
-                                data.update_linecut()
-                        if data.multi_linecuts_window == True:
-                            if data.multi_linecuts_window.running:
-                                data.update_multiple_linecuts()
+                    try:
+                        data.linecut_window
+                    except AttributeError:
+                        pass
+                    else:
+                        data.update_linecut()
+                    try:
+                        data.multi_linecuts_window
+                    except AttributeError:
+                        pass
+                    else:
+                        data.update_multiple_linecuts()
         self.canvas.draw()
           
     def refresh_plot(self):
@@ -313,8 +317,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
-            data.refresh_data()
-            self.update_plots(update_linecut=False)
+            data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
+            self.update_plots()
             
     def move_file(self, direction):
         print('move_file')
@@ -420,10 +424,15 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.update_plots()
                     self.show_current_all()            
                 elif setting_name == 'delimiter':
-                    data.refresh_data()
+                    data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
                     self.update_plots()
+                    self.show_current_all() 
                 elif setting_name == '2D':
                     self.paste_plot_settings(which='old')
+                elif setting_name == 'rc-filter':
+                    data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
+                    self.update_plots()
+                    self.show_current_all()
                 elif setting_name == 'lut':
                     data.apply_colormap()
                     self.canvas.draw()
@@ -794,7 +803,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         print('mouse_click_canvas')
         if self.navi_toolbar.mode == '':
             if event.inaxes:
-                x, y = float(event.xdata), float(event.ydata)
+                x, y = event.xdata, event.ydata
                 items = self.file_list
                 self.plot_in_focus = [items.item(index) for index in range(items.count()) 
                         if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
@@ -803,22 +812,19 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     data = plot_data.processed_data
                     index_x = np.argmin(np.absolute(data[0][:,0]-x))
                     index_y = np.argmin(np.absolute(data[1][0,:]-y))
-                    plot_data.selected_indices = [index_x, index_y]
                     if (event.button == 1 or event.button == 2) and plot_data.settings['2D'] == 'False':
+                        plot_data.selected_indices = [int(index_x), int(index_y)]
                         if event.button == 1:
                             print('leftmouseclickplot')
                             plot_data.orientation = 'horizontal'
                         else:
                             print('middlemouseclickplot')
                             plot_data.orientation = 'vertical'
-                        if not plot_data.linecut_window:
+                        try:
+                            plot_data.linecut_window
+                        except AttributeError:
                             plot_data.linecut_window = LineCutWindow()
-                        if plot_data.linecut:
-                            try:
-                                plot_data.linecut.remove()
-                            except:
-                                pass
-                            plot_data.linecut = None
+                        plot_data.linecut_window.running = True
                         plot_data.update_linecut()
                         self.canvas.draw()
                     elif event.button == 3:
@@ -836,6 +842,17 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             for channel in plot_data.channels[2-(plot_data.settings['2D']=='True'):]:
                                 action = QtWidgets.QAction(channel, self)
                                 channel_menu.addAction(action)
+                        try:
+                            plot_data.settings['rc-filter']
+                        except KeyError:
+                            pass
+                        else:
+                            if plot_data.settings['rc-filter'] != '':
+                                if plot_data.rcfilter_correct == True:
+                                    action = QtWidgets.QAction('Disable RC-filter correction...', self)                            
+                                else:
+                                    action = QtWidgets.QAction('Enable RC-filter correction...', self)
+                                menu.addAction(action)
                         if plot_data.settings['2D'] == 'False':
                             if plot_data.cropping:
                                 action = QtWidgets.QAction('Crop x to...', self)
@@ -848,6 +865,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                 action = QtWidgets.QAction('Crop from...', self)
                                 plot_data.crop_from = [x, y]
                                 plot_data.cropping = False
+                            menu.addAction(action)
+                            if plot_data.drawing_diagonal_linecut:
+                                action = QtWidgets.QAction('Diagonal linecut to...', self)
+                                plot_data.linecut_to = [int(index_x), int(index_y)]
+                            else:
+                                action = QtWidgets.QAction('Diagonal linecut from...', self)
+                                plot_data.linecut_from = [int(index_x), int(index_y)]
                             menu.addAction(action)
                             entries = ['Hide linecuts...',
                                        'Refresh plot...',
@@ -895,13 +919,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if signal.text() == 'Hide linecuts...':
             try:
                 plot_data.linecut.remove()
-                plot_data.linecut = None
+                del plot_data.linecut
+                plot_data.linecut_window.running = False
                 self.canvas.draw()
             except:
-                print('No linecuts present...')
+                pass
         elif signal.text() == 'Refresh plot...':
-            plot_data.refresh_data()
-            self.update_plots(update_linecut=False)
+            plot_data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
+            self.update_plots()
         elif (signal.text() == 'Plot horizontal linecuts...' or
             signal.text() == 'Plot vertical linecuts...'):
             if signal.text() == 'Plot horizontal linecuts...':
@@ -910,6 +935,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 plot_data.multi_orientation = 'vertical'
             plot_data.multi_linecuts_window = LineCutWindow(multiple=True)
             plot_data.update_multiple_linecuts()
+        elif signal.text() == 'Enable RC-filter correction...':
+            plot_data.rcfilter_correct = True
+            plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
+            self.update_plots()
+        elif signal.text() == 'Disable RC-filter correction...':
+            plot_data.rcfilter_correct = False
+            plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
+            self.update_plots()
         elif signal.text() == 'Crop from...':
             plot_data.cropping = True
         elif (signal.text() == 'Crop x and y to...' or
@@ -936,9 +969,22 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 plot_data.apply_filter(new_filter)
                 self.append_filter_to_table()
             self.show_current_view_settings()
-            self.update_plots(update_linecut=False)
+            self.update_plots()
             self.canvas.draw()
             plot_data.cropping = False
+        elif signal.text() == 'Diagonal linecut from...':
+            x1, y1 = plot_data.linecut_from
+            plot_data.drawing_diagonal_linecut = True
+            self.canvas.draw()
+        elif signal.text() == 'Diagonal linecut to...':
+            plot_data.orientation = 'diagonal'
+            try:
+                plot_data.linecut_window
+            except AttributeError:
+                plot_data.linecut_window = LineCutWindow()
+            plot_data.update_linecut()
+            self.canvas.draw()
+            plot_data.drawing_diagonal_linecut = False
         elif signal.text() == 'FFT vertical...':
             plot_data.fft_orientation = 'vertical'
             plot_data.open_fft_window()
@@ -976,12 +1022,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             if self.plot_in_focus:
                 data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
                 if data.settings['2D'] == 'False':
-                    if data.linecut:
-                        try:
-                            data.linecut.remove()
-                        except:
-                            pass
-                        data.linecut = None
+                    try:
+                        data.linecut_window
+                    except AttributeError:
+                        pass
+                    else:
                         data_shape = data.processed_data[0].shape
                         if data.orientation == 'horizontal':
                             new_index = data.selected_indices[1]+int(event.step)
@@ -991,8 +1036,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             new_index = data.selected_indices[0]+int(event.step)
                             if new_index >= 0 and new_index < data_shape[0]-1:
                                 data.selected_indices[0] = new_index
-                    data.update_linecut()
-                    self.canvas.draw()
+                        data.update_linecut()
+                        self.canvas.draw()
             else:
                 checked_items = [items.item(index) for index in range(items.count()) 
                         if items.item(index).checkState() == 2]
@@ -1073,10 +1118,10 @@ class Data3D:
                 'title': '', 'xlabel': 'Gate Voltage (V)',
                 'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
                 'titlesize': 'x-large', 'labelsize': 'xx-large',
-                'ticksize': 'x-large', 'columns': '0,1,2', '2D': 'False', 'colorbar': 'True', 
+                'ticksize': 'x-large', 'columns': '0,1,2', 'colorbar': 'True', 
                 'minorticks': 'False', 'delimiter': '', 'lut': '512', 
                 'rasterized': 'True', 'dpi': 'figure', 'transparent': 'False', 
-                'frameon': 'False'}
+                'frameon': 'False', '2D': 'False', 'rc-filter': ''}
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
         self.settings = self.default_settings.copy()
@@ -1089,14 +1134,17 @@ class Data3D:
             self.from_npy_file = False
             self.load_data_from_file(filepath)
         self.processed_to_raw()
-        if self.filename == 'data.dat' and os.path.isfile(os.path.dirname(self.filepath)+'/meta.json'): # Copenhagen meta data file
+        meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
+        if self.filename == 'data.dat' and meta_file_exists and self.from_npy_file == False: # Copenhagen meta data file
             self.interpret_meta_file()
-            self.meta_unit_conversion()
+            self.rcfilter_correct = True
+            self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
         else:
             self.channels = None
             self.meta_data = None
             self.meta_data_name = None
-        self.apply_all_filters(update_color_limits=False)
+            self.rcfilter_correct = False
+            self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
         min_map = np.min(self.processed_data[2])
         max_map = np.max(self.processed_data[2])
         mid_map = 0.5*(min_map+max_map)
@@ -1111,12 +1159,11 @@ class Data3D:
         self.axes = None
         self.image = None
         self.cbar = None
-        self.linecut_window = None
-        self.multi_linecuts_window = None
-        self.linecut = None
         self.orientation = None
         self.multi_orientation = None
         self.cropping = False
+        self.drawing_diagonal_linecut = False
+        
         
     def load_data_from_file(self, filepath):
         print('load_data_from_file')
@@ -1136,7 +1183,7 @@ class Data3D:
             self.raw_data = [xq.transpose(), yq.transpose(), zq]
         else:
             self.settings['2D'] = 'False'
-            self.raw_data = [np.reshape(column_data[0:l0*l1,x], (l1,l0)) for x in self.columns]
+            self.raw_data = [np.reshape(column_data[0:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
 
     def interpret_meta_file(self):
         print('interpret_meta_file')
@@ -1148,15 +1195,48 @@ class Data3D:
         self.settings['ylabel'] = self.channels[self.columns[1]]
         self.settings['clabel'] = self.channels[self.columns[2]]
         self.meta_data_name = self.meta_data['timestamp']+' '+self.meta_data['name']
+        if 'source' in self.channels and 'dc_curr' in self.channels:
+            DEFAULT_RC_FILTER = 8240
+            self.settings['rc-filter'] = str(DEFAULT_RC_FILTER)
+    
+    def correct_for_rcfilters(self):
+        print('correct_for_rcfilters')
+        if 'source' in self.channels and 'dc_curr' in self.channels:
+            source_index = self.channels.index('source')
+            if source_index in self.columns[:3-(self.settings['2D']=='True')]:
+                print('Correcting source for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
+                source_divider = self.meta_data['setup']['meta']['source_divider']
+                curr_index = self.channels.index('dc_curr')                    
+                curr_amp = self.meta_data['setup']['meta']['current_amp']
+                source_data = self.raw_data[source_index] / source_divider
+                curr_data = self.raw_data[curr_index] / curr_amp
+                source_corrected = (source_data - float(self.settings['rc-filter'])*curr_data)*source_divider
+                self.processed_data[self.columns.index(source_index)] = np.copy(source_corrected)
+        
+        if 'lockin_curr/X' in self.channels:
+            lockin_index = self.channels.index('lockin_curr/X')
+            if lockin_index in self.columns[:3-(self.settings['2D']=='True')]:
+                print('Correcting source for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
+                for instrument in self.meta_data['register']['instruments']:
+                    if instrument['name'] == 'lockin_curr':
+                        break
+                sine_amplitude = float(instrument['config']['SLVL'])
+                lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
+                curr_amp = self.meta_data['setup']['meta']['current_amp']
+                conversion = curr_amp*sine_amplitude/lockin_divider # to Siemens (1/Ohm)
+                lockin_data = self.raw_data[lockin_index]/conversion # in Siemens
+                lockin_corrected = lockin_data/(1.0-float(self.settings['rc-filter'])*lockin_data)*conversion
+                self.processed_data[self.columns.index(lockin_index)] = np.copy(lockin_corrected)                
     
     def meta_unit_conversion(self):
         if 'source' in self.channels:
             source_index = self.channels.index('source')
             if source_index in self.columns[:3-(self.settings['2D']=='True')]:
+                source_divider = self.meta_data['setup']['meta']['source_divider']
+                SOURCE_UNIT = 1e-3 # Convert V to mV  
                 print('Correcting source units to millivolts...')
-                source_divider = self.meta_data['setup']['meta']['source_divider']*1e-3
-                if source_divider != 1.0:
-                    divide = '%.3g' % source_divider
+                if source_divider*SOURCE_UNIT != 1.0:
+                    divide = '%.3g' % (source_divider*SOURCE_UNIT)
                     axis = ['X','Y','Z'][self.columns.index(source_index)+(self.settings['2D']=='True')] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
@@ -1170,14 +1250,14 @@ class Data3D:
             gate_index = self.channels.index(gate)
             if gate_index in self.columns[:3-(self.settings['2D']=='True')]:                              
                 print('Correcting '+gate+' units to volts...')
-                fine_divider_dac = 200
-                fine_offset_dac = 0.05
-                divide = '%.3g' % fine_divider_dac
+                DAC_FINE_DIVIDER = 200
+                DAC_FINE_OFFSET = 0.05
+                divide = '%.3g' % DAC_FINE_DIVIDER
                 gate_axis = ['X','Y','Z'][self.columns.index(gate_index)+(self.settings['2D']=='True')] 
                 self.filters.append({'Name': 'Divide', 'Method': gate_axis, 
                                      'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if fine_offset_dac != 0.0:
-                    fine_offset = '%.3g' % fine_offset_dac
+                if DAC_FINE_OFFSET != 0.0:
+                    fine_offset = '%.3g' % DAC_FINE_OFFSET
                     self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
                                          'Setting 1': fine_offset, 'Setting 2': '', 'Checked': 2})
                 if self.columns.index(gate_index) == 1:
@@ -1211,10 +1291,11 @@ class Data3D:
         if 'dc_curr' in self.channels:
             curr_index = self.channels.index('dc_curr')
             if curr_index in self.columns[:3-(self.settings['2D']=='True')]:
+                curr_amp = self.meta_data['setup']['meta']['current_amp']
                 print('Correcting dc_curr units to nano-amperes...')
-                curr_amp = self.meta_data['setup']['meta']['current_amp']*1e-9
-                if curr_amp != 1.0:
-                    divide = '%.3g' % curr_amp
+                CURR_UNIT = 1e-9 # Ampere to nano-ampere
+                if curr_amp*CURR_UNIT != 1.0:
+                    divide = '%.3g' % (curr_amp*CURR_UNIT)
                     axis = ['X','Y','Z'][self.columns.index(curr_index)+(self.settings['2D']=='True')] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
@@ -1226,16 +1307,18 @@ class Data3D:
         if 'lockin_curr/X' in self.channels:
             lockin_index = self.channels.index('lockin_curr/X')
             if lockin_index in self.columns[:3-(self.settings['2D']=='True')]:
-                print('Correcting lockin_curr/X units to microsiemens...')
                 for instrument in self.meta_data['register']['instruments']:
                     if instrument['name'] == 'lockin_curr':
                         break
                 sine_amplitude = float(instrument['config']['SLVL'])
                 lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
-                correction_factor = curr_amp*sine_amplitude/lockin_divider*1e-6
-                if correction_factor != 1.0:
-                    divide = '%.3g' % correction_factor
+                
+                print('Correcting lockin_curr/X units to microsiemens...')
+                LOCKIN_UNIT = 1e-6 # Siemens to microsiemens
+                conversion_factor = curr_amp*sine_amplitude/lockin_divider*LOCKIN_UNIT
+                if conversion_factor != 1.0:
+                    divide = '%.3g' % conversion_factor
                     axis = ['X','Y','Z'][self.columns.index(lockin_index)+(self.settings['2D']=='True')] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
@@ -1243,10 +1326,10 @@ class Data3D:
                     self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
                 elif self.settings['2D'] == 'True' and self.columns.index(lockin_index) == 1:
                     self.settings['ylabel'] = 'd$I$/d$V$ ($\mu$S)'
-                   
+               
     def processed_to_raw(self):
         print('processed_to_raw')
-        self.processed_data = [np.copy(self.raw_data[i]) for i in range(3)]
+        self.processed_data = [np.copy(self.raw_data[i]) for i in self.columns]
     
     def refresh_data(self, update_color_limits=False, refresh_unit_conversion=False):
         print('refresh_data')
@@ -1254,10 +1337,7 @@ class Data3D:
             print('.npy files cannot be refreshed...')
         else:
             self.load_data_from_file(self.filepath)
-            if self.meta_data and refresh_unit_conversion == True:
-                self.filters = []
-                self.meta_unit_conversion()
-            self.apply_all_filters(update_color_limits)
+            self.apply_all_filters(update_color_limits, refresh_unit_conversion)
     
     def add_plot(self):
         print('add_plot')
@@ -1266,9 +1346,9 @@ class Data3D:
         if self.view_settings['Reverse']:
             cmap = cmap+'_r'
         self.image = self.axes.pcolormesh(data[0], data[1], data[2], 
-                                          norm=self.view_settings['Norm'], 
-                                          cmap=cm.get_cmap(cmap, lut=int(self.settings['lut'])),
-                                          rasterized=self.settings['rasterized']=='True')
+                                  norm=self.view_settings['Norm'], 
+                                  cmap=cm.get_cmap(cmap, lut=int(self.settings['lut'])),
+                                  rasterized=self.settings['rasterized']=='True')
         if self.settings['colorbar'] == 'True':
             self.cbar = self.figure.colorbar(self.image, orientation='vertical')
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
@@ -1374,9 +1454,14 @@ class Data3D:
                 self.reset_view_settings()
                 self.apply_view_settings()
 
-    def apply_all_filters(self, update_color_limits=True):
+    def apply_all_filters(self, update_color_limits=True, refresh_unit_conversion=False):
         print('apply_all_filters')
         self.processed_to_raw()
+        if self.rcfilter_correct:
+            self.correct_for_rcfilters()
+        if self.meta_data and refresh_unit_conversion:
+            self.filters = []
+            self.meta_unit_conversion()
         for _, filter_settings in enumerate(self.filters):
             if filter_settings['Checked']:
                 print('Applying '+filter_settings['Name']+'...')
@@ -1389,8 +1474,13 @@ class Data3D:
                 pass
             
     def update_linecut(self):
-        print('plotLineCut')
-        try:
+        #print('update_linecut')
+        if self.linecut_window.running:
+            try:
+                self.linecut.remove()
+                del self.linecut
+            except:
+                pass
             if self.orientation == 'horizontal':
                 x = self.processed_data[0][:,self.selected_indices[1]]
                 y = self.processed_data[2][:,self.selected_indices[1]]
@@ -1411,11 +1501,22 @@ class Data3D:
                 self.linecut_window.title = self.settings['xlabel']+' = '+str(value)
                 self.linecut = self.axes.axvline(
                         x=0.5*(value+value_2), linestyle='dashed', linewidth=0.5, color='k')
+            elif self.orientation == 'diagonal':
+                i_x0, i_y0 = self.linecut_from
+                i_x1, i_y1 = self.linecut_to
+                n = 200
+                x_diag, y_diag = np.linspace(i_x0, i_x1, n), np.linspace(i_y0, i_y1, n)
+                y = map_coordinates(self.processed_data[2], np.vstack((x_diag, y_diag)))
+                x = np.linspace(0, 1, n)
+                self.linecut_window.xlabel = ''
+                self.linecut_window.zlabel = ''
+                self.linecut_window.title = ''
+                self.linecut = self.axes.plot([self.processed_data[0][i_x0,0], self.processed_data[0][i_x1,0]],
+                                              [self.processed_data[1][0,i_y0], self.processed_data[1][0,i_y1]],
+                                              linestyle='dashed', linewidth=0.5, color='k')[0]
             self.linecut_window.ylabel = self.settings['clabel']
             self.linecut_window.draw_plot(x, y)
             self.linecut_window.show()
-        except:
-            print('Linecut out of bounds')
     
     def update_multiple_linecuts(self):
         print('plotMultipleLineCuts')
@@ -1634,7 +1735,7 @@ class LineCutWindow(QtWidgets.QWidget):
         self.canvas.draw()
     
     def apply_plot_settings(self):
-        print('apply_plot_settings')
+        #print('apply_plot_settings')
         self.axes.set_xlabel(self.xlabel, size='xx-large')
         self.axes.set_ylabel(self.ylabel, size='xx-large')
         self.axes.tick_params(labelsize='x-large')
