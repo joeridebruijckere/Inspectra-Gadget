@@ -206,35 +206,35 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
 
     def open_files(self, filenames=None):
         print('open_files')
-    #try:
-        if not filenames:
-            filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
-                    self, 'Open File', '', 'Data Files (*.dat *.npy)')
-        if filenames:
-            self.file_list.itemChanged.disconnect(self.file_checked)
-            for filename in filenames:
-                print('Open '+filename)
-                if filename.split('.')[-1] == 'dat':
-                    self.add_file(filename)
-                elif filename.split('.')[-1] == 'npy':
-                    loaded_session = np.load(filename, allow_pickle=True)
-                    for session_item in loaded_session:
-                        self.add_file(session_item['File Name'], data=session_item['Raw Data'])
-                        item = self.file_list.item(self.file_list.count()-1)
-                        data = item.data(QtCore.Qt.UserRole)
-                        data.settings = session_item['Settings']
-                        data.filters = session_item['Filters']
-                        data.view_settings = session_item['View Settings']
-                        data.apply_all_filters(update_color_limits=False)
-            last_item = self.file_list.item(self.file_list.count()-1)
-            self.file_list.setCurrentItem(last_item)
-            for item_index in range(self.file_list.count()-1):
-                self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-            self.show_current_all()
-            self.file_list.itemChanged.connect(self.file_checked)
-            last_item.setCheckState(QtCore.Qt.Checked)
-    #except:
-    #    print('Could not open file(s)...')
+        try:
+            if not filenames:
+                filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                        self, 'Open File', '', 'Data Files (*.dat *.npy)')
+            if filenames:
+                self.file_list.itemChanged.disconnect(self.file_checked)
+                for filename in filenames:
+                    print('Open '+filename)
+                    if filename.split('.')[-1] == 'dat':
+                        self.add_file(filename)
+                    elif filename.split('.')[-1] == 'npy':
+                        loaded_session = np.load(filename, allow_pickle=True)
+                        for session_item in loaded_session:
+                            self.add_file(session_item['File Name'], data=session_item['Raw Data'])
+                            item = self.file_list.item(self.file_list.count()-1)
+                            data = item.data(QtCore.Qt.UserRole)
+                            data.settings = session_item['Settings']
+                            data.filters = session_item['Filters']
+                            data.view_settings = session_item['View Settings']
+                            data.apply_all_filters(update_color_limits=False)
+                last_item = self.file_list.item(self.file_list.count()-1)
+                self.file_list.setCurrentItem(last_item)
+                for item_index in range(self.file_list.count()-1):
+                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+                self.show_current_all()
+                self.file_list.itemChanged.connect(self.file_checked)
+                last_item.setCheckState(QtCore.Qt.Checked)
+        except:
+            print('Could not open file(s)...')
             
     def add_file(self, file, data=None):
         print('add_file')
