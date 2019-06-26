@@ -40,8 +40,7 @@ def get_list(filter_name=''):
             'Offset': ['X','Y','Z'], 'Absolute': [], 'Multiply': ['X','Y','Z'], 
             'Slope': [], 'Logarithm': ['log10','ln'], 'Curvature': ['X','Y'],
             'Band cut': ['Y', 'X'], 'Interp': ['linear','cubic','quintic'],
-            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z'],
-            '-RCfilters': ['uS','S','e^2/h','G0']}
+            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z']}
     if filter_name:
         return_list = filter_methods[filter_name]
     else:
