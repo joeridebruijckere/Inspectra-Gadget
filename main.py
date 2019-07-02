@@ -1567,8 +1567,8 @@ class LineCutWindow(QtWidgets.QWidget):
         self.button_layout.addWidget(self.save_button)
         self.button_layout.addWidget(self.save_image_button)
         self.button_layout.addStretch()
-        if multiple:
-            self.init_fit()
+        #if multiple:
+        self.init_fit()
         self.vertical_layout.addLayout(self.button_layout)
         self.setLayout(self.vertical_layout)
     
@@ -1652,38 +1652,56 @@ class LineCutWindow(QtWidgets.QWidget):
     
     def start_fitting(self):
         function_name = self.fit_box.currentText()
-        number = int(self.number_line_edit.text())
         self.y_fit = np.copy(self.y)
-        self.fit_parameters = []
-        for index in range(number):
+        if self.manual_box.checkState():
+            p0 = None
+        else:
+            p0 = [float(par) for par in self.guess_edit.text().split()]
+        if self.multiple:
+            self.fit_parameters = []
+            for index in range(int(self.number_line_edit.text())):
+                try:
+                    popt = fits.fit_data(function_name=function_name, xdata=self.x[index], 
+                                         ydata=self.y[index], p0=p0)
+                    self.fit_parameters.append(list(popt))
+                    self.y_fit[index] = fits.get_function(function_name)(self.x[index], *popt)
+                except RuntimeError:
+                    print('Curve with index '+str(index)+' could not be fitted...')
+                    nans = [np.nan]*len(fits.get_names(function_name).split(','))
+                    self.fit_parameters.append(nans)
+                    self.y_fit[index] = np.nan
+        else:
             try:
-                if self.manual_box.checkState():
-                    p0 = None
-                else:
-                    p0 = [float(par) for par in self.guess_edit.text().split()]
-                popt = fits.fit_data(function_name=function_name, xdata=self.x[index], 
-                                     ydata=self.y[index], p0=p0)
-                #popt[0] = np.absolute(popt[0]) ## TODO
-                self.fit_parameters.append(list(popt))
-                self.y_fit[index] = fits.get_function(function_name)(self.x[index], *popt)
+                self.fit_parameters = fits.fit_data(function_name=function_name, xdata=self.x, 
+                                                    ydata=self.y, p0=p0)
+                self.y_fit = fits.get_function(function_name)(self.x, *self.fit_parameters)
             except RuntimeError:
-                print('Curve with index '+str(index)+' could not be fitted...')
-                nans = [np.nan]*len(fits.get_names(function_name).split(','))
-                self.fit_parameters.append(nans)
-                self.y_fit[index] = np.nan
-        self.draw_plots()
+                print('Curve could not be fitted...')
+                self.fit_parameters = [np.nan]*len(fits.get_names(function_name).split(','))
+                self.y_fit = np.nan            
+        if self.multiple:
+            self.draw_plots()
+        else:
+            self.draw_plot(self.x, self.y)
         self.draw_fits()
         self.plot_parameters()
         
     def plot_parameters(self):
-        self.pfit = np.array(self.fit_parameters).transpose()
-        rows, cols = self.pfit.shape
-        self.pars_window = []
-        for index in range(rows):
-            ylabel = fits.get_names(self.fit_box.currentText()).split(',')[index]
-            self.pars_window.append(ParametersWindow(
-                    self.z[:,0], self.pfit[index], self.zlabel, ylabel))
-            self.pars_window[-1].show()
+        if self.multiple:
+            self.pfit = np.array(self.fit_parameters).transpose()
+            rows, cols = self.pfit.shape
+            self.pars_window = []
+            for index in range(rows):
+                ylabel = fits.get_names(self.fit_box.currentText()).split(',')[index]
+                self.pars_window.append(ParametersWindow(
+                        self.z[:,0], self.pfit[index], self.zlabel, ylabel))
+                self.pars_window[-1].show()
+        else:
+            self.axes.text(0.02,0.95,'Position: %.4g' % self.fit_parameters[2], transform=self.axes.transAxes)
+            self.axes.text(0.02,0.9,'Height: %.4g' % self.fit_parameters[1], transform=self.axes.transAxes)
+            self.axes.text(0.02,0.85,'Width: %.4g' % self.fit_parameters[0], transform=self.axes.transAxes)
+            self.axes.text(0.02,0.8,'Background: %.4g' % self.fit_parameters[3], transform=self.axes.transAxes)
+            self.canvas.draw()
     
     def colormap_type_edited(self):
         self.colormap_box.currentIndexChanged.disconnect(self.draw_plots)
@@ -1730,9 +1748,12 @@ class LineCutWindow(QtWidgets.QWidget):
         self.apply_plot_settings()
               
     def draw_fits(self):
-        for index in range(self.number):
-            self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
-                           'k--', linewidth=0.8)
+        if self.multiple:
+            for index in range(self.number):
+                self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
+                               'k--', linewidth=0.8)
+        else:
+            self.axes.plot(self.x, self.y_fit, 'k--', linewidth=0.8)            
         self.canvas.draw()
     
     def apply_plot_settings(self):
