@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on June 26 2019
+Last updated on July 4 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -24,13 +24,15 @@ import design
 import filters
 import fits
 
+PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
+DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
+
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
 rcParams['font.family'] = 'sans-serif'
 rcParams['font.sans-serif'] = ['Arial']
 rcParams['font.cursive'] = ['Arial']
 rcParams['mathtext.fontset'] = 'custom'
-
 
 class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def __init__(self):
@@ -183,13 +185,18 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.lock_checkbox.clicked.connect(lambda: self.view_setting_edited('Locked'))
         self.mid_checkbox.clicked.connect(lambda: self.view_setting_edited('MidLock'))
         self.reset_limits_button.clicked.connect(self.reset_color_limits)
-        self.action_save_image.triggered.connect(self.save_image)
+        self.action_save_canvas.triggered.connect(self.save_image)
         self.load_filters_button.clicked.connect(self.load_filters)
         self.action_filters.triggered.connect(self.save_filters)
         self.action_current_file.triggered.connect(lambda: self.save_session('current'))
         self.action_all_files.triggered.connect(lambda: self.save_session('all'))
         self.action_merge_raw.triggered.connect(lambda: self.merge_files(raw_data=True))
         self.action_merge_processed.triggered.connect(lambda: self.merge_files(raw_data=False))
+        self.action_refresh_30s.triggered.connect(lambda: self.start_auto_refresh(time_interval=30))
+        self.action_refresh_5m.triggered.connect(lambda: self.start_auto_refresh(time_interval=300))
+        self.action_refresh_30m.triggered.connect(lambda: self.start_auto_refresh(time_interval=1800))
+        self.action_refresh_stop.triggered.connect(self.stop_auto_refresh)
+        self.action_refresh_stop.setEnabled(False)
         self.refresh_file_button.clicked.connect(self.refresh_plot)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
         self.down_file_button.clicked.connect(lambda: self.move_file('down'))
@@ -205,7 +212,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.subplot_grid = [(1,1),(1,2),(2,2),(2,2),(2,3),(2,3),(2,4),(2,4),(3,4),(3,4),(3,4),(3,4)]
 
     def open_files(self, filenames=None):
-        print('open_files')
+        if PRINT_FUNCTION_CALLS:
+            print('open_files')
         try:
             if not filenames:
                 filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -237,7 +245,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('Could not open file(s)...')
             
     def add_file(self, file, data=None):
-        print('add_file')
+        if PRINT_FUNCTION_CALLS:
+            print('add_file')
         item = QtWidgets.QListWidgetItem()
         item.setText(os.path.basename(file))
         item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
@@ -248,7 +257,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)
         
     def remove_files(self, which='current'):
-        print('remove_files')
+        if PRINT_FUNCTION_CALLS:
+            print('remove_files')
         update_plots = False
         if self.file_list.count() > 0:
             if which == 'current':
@@ -266,7 +276,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.update_plots()
     
     def file_checked(self, item):
-        print('file_checked')
+        if PRINT_FUNCTION_CALLS:
+            print('file_checked')
         try:
             self.update_plots()
             if item.checkState() == 2:
@@ -275,14 +286,16 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('Could not update plot(s)...')
     
     def file_clicked(self):
-        print('file_clicked')
+        if PRINT_FUNCTION_CALLS:
+            print('file_clicked')
         try:
             self.show_current_all()
         except:
             print('Could not show current settings...')
     
     def update_plots(self):
-        print('update_plots')
+        if PRINT_FUNCTION_CALLS:
+            print('update_plots')
         self.figure.clear()
         file_list = self.file_list
         checked_items = [file_list.item(index) for index in range(file_list.count()) 
@@ -313,15 +326,44 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.canvas.draw()
           
     def refresh_plot(self):
-        print('refresh_plot')
+        if PRINT_FUNCTION_CALLS:
+            print('refresh_plot')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
             data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
             self.update_plots()
+        
+    def start_auto_refresh(self, time_interval):
+        if PRINT_FUNCTION_CALLS:
+            print('start_auto_refresh')
+        self.auto_refresh_timer = QtCore.QTimer()
+        self.auto_refresh_timer.setInterval(time_interval*1000)
+        self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
+        self.action_refresh_stop.setEnabled(True)
+        self.auto_refresh_timer.start()
+        
+    def auto_refresh_call(self):
+        self.setWindowTitle('InSpectra Gadget (auto-refreshing...)')
+        file_list = self.file_list
+        checked_items = [file_list.item(index) for index in range(file_list.count()) 
+                        if file_list.item(index).checkState() == 2]
+        if checked_items:
+            for index, item in enumerate(checked_items):
+                data = item.data(QtCore.Qt.UserRole)
+                data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
+            self.update_plots()
+        self.setWindowTitle('InSpectra Gadget')
             
+    def stop_auto_refresh(self):
+        if PRINT_FUNCTION_CALLS:
+            print('stop_auto_refresh')
+        self.auto_refresh_timer.stop()
+        self.action_refresh_stop.setEnabled(False)
+        
     def move_file(self, direction):
-        print('move_file')
+        if PRINT_FUNCTION_CALLS:
+            print('move_file')
         current_item = self.file_list.currentItem()
         if current_item:
             current_row = self.file_list.currentRow()
@@ -344,13 +386,15 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.canvas.draw()
         
     def show_current_all(self):
-        print('show_current_all')
+        if PRINT_FUNCTION_CALLS:
+            print('show_current_all')
         self.show_current_plot_settings()
         self.show_current_view_settings()
         self.show_current_filters()
     
     def show_current_plot_settings(self):
-        print('showCurrentSettings')
+        if PRINT_FUNCTION_CALLS:
+            print('showCurrentSettings')
         item = self.file_list.currentItem()
         if item:
             table = self.settings_table
@@ -367,7 +411,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             table.itemChanged.connect(self.plot_setting_edited)
             
     def show_current_view_settings(self):
-        print('show_current_view_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('show_current_view_settings')
         current_item = self.file_list.currentItem()
         if current_item:
             settings = current_item.data(QtCore.Qt.UserRole).view_settings
@@ -395,7 +440,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.lock_checkbox.setCheckState(QtCore.Qt.Unchecked)
     
     def show_current_filters(self):
-        print('show_current_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('show_current_filters')
         table = self.filters_table
         table.setRowCount(0)
         current_item = self.file_list.currentItem()
@@ -405,7 +451,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.append_filter_to_table()
     
     def plot_setting_edited(self):
-        print('plot_setting_edited')
+        if PRINT_FUNCTION_CALLS:
+            print('plot_setting_edited')
         current_item = self.file_list.currentItem()
         data = current_item.data(QtCore.Qt.UserRole)
         data.old_settings = data.settings.copy()
@@ -488,19 +535,22 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 
     
     def fill_colormap_box(self):
-        print('fill_colormap_box')
+        if PRINT_FUNCTION_CALLS:
+            print('fill_colormap_box')
         self.colormap_box.currentIndexChanged.disconnect(self.colormap_edited)
         self.colormap_box.clear()
         self.colormap_box.addItems(self.cmaps[self.colormap_type_box.currentIndex()][1])
         self.colormap_box.currentIndexChanged.connect(self.colormap_edited)
     
     def colormap_type_edited(self):
-        print('colormap_type_edited')
+        if PRINT_FUNCTION_CALLS:
+            print('colormap_type_edited')
         self.fill_colormap_box()
         self.colormap_edited()
         
     def colormap_edited(self):
-        print('colormap_edited')
+        if PRINT_FUNCTION_CALLS:
+            print('colormap_edited')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -513,7 +563,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.canvas.draw()
     
     def filters_table_edited(self, item):
-        print('filters_table_edited')
+        if PRINT_FUNCTION_CALLS:
+            print('filters_table_edited')
         current_item = self.file_list.currentItem()
         data = current_item.data(QtCore.Qt.UserRole)
         data.oldFilters = copy.deepcopy(data.filters)
@@ -540,25 +591,29 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.paste_filters(which='old')
     
     def copy_plot_settings(self):
-        print('copy_plot_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('copy_plot_settings')
         current_item = self.file_list.currentItem()
         if current_item:
             self.copied_settings = current_item.data(QtCore.Qt.UserRole).settings.copy()
     
     def copy_filters(self):
-        print('copy_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('copy_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             self.copied_filters = copy.deepcopy(current_item.data(QtCore.Qt.UserRole).filters)
             
     def copy_view_settings(self):
-        print('copy_view_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('copy_view_settings')
         current_item = self.file_list.currentItem()
         if current_item:
             self.copied_view_settings = current_item.data(QtCore.Qt.UserRole).view_settings.copy()
     
     def paste_plot_settings(self, which='copied'):
-        print('paste_plot_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('paste_plot_settings')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -575,7 +630,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.canvas.draw()
     
     def paste_filters(self, which='copied'):
-        print('paste_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('paste_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -592,7 +648,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.canvas.draw()
 
     def paste_view_settings(self, which='copied'):
-        print('paste_view_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('paste_view_settings')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -608,7 +665,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.canvas.draw()
     
     def open_plot_settings_menu(self):
-        print('open_plot_settings_menu')
+        if PRINT_FUNCTION_CALLS:
+            print('open_plot_settings_menu')
         table = self.settings_table
         row = table.currentRow()
         column = table.currentColumn()
@@ -623,13 +681,15 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 menu.popup(QtGui.QCursor.pos())
    
     def replace_plot_setting(self, signal):
-        print('replaceSetting')
+        if PRINT_FUNCTION_CALLS:
+            print('replaceSetting')
         table = self.settings_table
         item = table.currentItem()
         item.setText(signal.text())
 
     def reset_color_limits(self):
-        print('reset_color_limits')
+        if PRINT_FUNCTION_CALLS:
+            print('reset_color_limits')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -640,7 +700,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.canvas.draw()
     
     def filters_box_changed(self):
-        print('filters_box_changed')
+        if PRINT_FUNCTION_CALLS:
+            print('filters_box_changed')
         current_item = self.file_list.currentItem()
         box = self.filters_combobox
         if current_item:
@@ -659,7 +720,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         box.currentIndexChanged.connect(self.filters_box_changed)
     
     def append_filter_to_table(self):
-        #print('append_filter_to_table')
+        if PRINT_FUNCTION_CALLS:
+            print('append_filter_to_table')
         current_item = self.file_list.currentItem()
         if current_item:
             table = self.filters_table
@@ -694,7 +756,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             table.itemChanged.connect(self.filters_table_edited)
     
     def remove_filters(self, which='current'):
-        print('remove_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('remove_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -717,7 +780,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.show_current_view_settings()
      
     def move_filter(self, to=1):
-        print('move_filter')
+        if PRINT_FUNCTION_CALLS:
+            print('move_filter')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -734,7 +798,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.show_current_view_settings()
 
     def save_image(self):
-        print('save_as')
+        if PRINT_FUNCTION_CALLS:
+            print('save_as')
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -754,7 +819,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 print('Saved!')
                 
     def save_filters(self):
-        print('save_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('save_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             filename, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -762,7 +828,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             np.save(filename, current_item.data(QtCore.Qt.UserRole).filters)
             
     def load_filters(self):
-        print('load_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('load_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             filename, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -776,7 +843,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.show_current_view_settings()
     
     def save_session(self, which='current'):
-        print('save_session')
+        if PRINT_FUNCTION_CALLS:
+            print('save_session')
         current_item = self.file_list.currentItem()
         if current_item:
             if which == 'current':
@@ -800,7 +868,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             np.save(filename, dictionary_list)
                 
     def mouse_click_canvas(self, event):
-        print('mouse_click_canvas')
+        if PRINT_FUNCTION_CALLS:
+            print('mouse_click_canvas')
         if self.navi_toolbar.mode == '':
             if event.inaxes:
                 x, y = event.xdata, event.ydata
@@ -815,10 +884,12 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     if (event.button == 1 or event.button == 2) and plot_data.settings['2D'] == 'False':
                         plot_data.selected_indices = [int(index_x), int(index_y)]
                         if event.button == 1:
-                            print('leftmouseclickplot')
+                            if PRINT_FUNCTION_CALLS:
+                                print('leftmouseclickplot')
                             plot_data.orientation = 'horizontal'
                         else:
-                            print('middlemouseclickplot')
+                            if PRINT_FUNCTION_CALLS:
+                                print('middlemouseclickplot')
                             plot_data.orientation = 'vertical'
                         try:
                             plot_data.linecut_window
@@ -829,7 +900,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         self.canvas.draw()
                         plot_data.linecut_window.activateWindow()
                     elif event.button == 3:
-                        print('rightmouseclickplot')
+                        if PRINT_FUNCTION_CALLS:
+                            print('rightmouseclickplot')
                         menu = QtWidgets.QMenu(self)
                         if plot_data.settings['2D'] == 'False':
                             z_value = data[2][index_x,index_y]
@@ -915,7 +987,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         self.show_current_view_settings()
     
     def popup_canvas(self, signal):
-        print(signal.text())
+        if PRINT_FUNCTION_CALLS:
+            print(signal.text())
         plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
         if signal.text() == 'Hide linecuts...':
             try:
@@ -1014,7 +1087,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.canvas.draw()
             
     def mouse_scroll_canvas(self, event):
-        #print('mouse_scroll_canvas')
+        if PRINT_FUNCTION_CALLS:
+            print('mouse_scroll_canvas')
         if event.inaxes:
             y = event.ydata
             items = self.file_list
@@ -1060,6 +1134,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.show_current_view_settings()
                     
     def merge_files(self, raw_data=True):
+        if PRINT_FUNCTION_CALLS:
+            print('merge_files')
         try:
             file_list = self.file_list
             checked_items = [file_list.item(index) for index in range(file_list.count()) 
@@ -1118,11 +1194,10 @@ class Data3D:
         self.default_settings = {
                 'title': '', 'xlabel': 'Gate Voltage (V)',
                 'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
-                'titlesize': 'x-large', 'labelsize': 'xx-large',
-                'ticksize': 'x-large', 'columns': '0,1,2', 'colorbar': 'True', 
-                'minorticks': 'False', 'delimiter': '', 'lut': '512', 
-                'rasterized': 'True', 'dpi': 'figure', 'transparent': 'False', 
-                'frameon': 'False', '2D': 'False', 'rc-filter': ''}
+                'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
+                'columns': '0,1,2', 'colorbar': 'True', 'minorticks': 'False', 
+                'delimiter': '', 'lut': '512', 'rasterized': 'True', 'dpi': 'figure', 
+                'transparent': 'False', 'frameon': 'False', '2D': 'False', 'rc-filter': ''}
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
         self.settings = self.default_settings.copy()
@@ -1138,7 +1213,7 @@ class Data3D:
         meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
         if self.filename == 'data.dat' and meta_file_exists and self.from_npy_file == False: # Copenhagen meta data file
             self.interpret_meta_file()
-            self.rcfilter_correct = True
+            self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
             self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
         else:
             self.channels = None
@@ -1163,11 +1238,11 @@ class Data3D:
         self.orientation = None
         self.multi_orientation = None
         self.cropping = False
-        self.drawing_diagonal_linecut = False
-        
+        self.drawing_diagonal_linecut = False        
         
     def load_data_from_file(self, filepath):
-        print('load_data_from_file')
+        if PRINT_FUNCTION_CALLS:
+            print('load_data_from_file')
         column_data = np.genfromtxt(filepath, delimiter=self.settings['delimiter'])
         _, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
         if len(indices) > 1: # if first column has more than one repeated value
@@ -1187,7 +1262,8 @@ class Data3D:
             self.raw_data = [np.reshape(column_data[0:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
 
     def interpret_meta_file(self):
-        print('interpret_meta_file')
+        if PRINT_FUNCTION_CALLS:
+            print('interpret_meta_file')
         self.metaFile = os.path.dirname(self.filepath)+'/meta.json'
         with open(self.metaFile) as f:
             self.meta_data = json.load(f)
@@ -1201,7 +1277,8 @@ class Data3D:
             self.settings['rc-filter'] = str(DEFAULT_RC_FILTER)
     
     def correct_for_rcfilters(self):
-        print('correct_for_rcfilters')
+        if PRINT_FUNCTION_CALLS:
+            print('correct_for_rcfilters')
         if 'source' in self.channels and 'dc_curr' in self.channels:
             source_index = self.channels.index('source')
             if source_index in self.columns[:3-(self.settings['2D']=='True')]:
@@ -1230,12 +1307,14 @@ class Data3D:
                 self.processed_data[self.columns.index(lockin_index)] = np.copy(lockin_corrected)                
     
     def meta_unit_conversion(self):
+        if PRINT_FUNCTION_CALLS:
+            print('meta_unit_conversion')
         if 'source' in self.channels:
             source_index = self.channels.index('source')
             if source_index in self.columns[:3-(self.settings['2D']=='True')]:
                 source_divider = self.meta_data['setup']['meta']['source_divider']
                 SOURCE_UNIT = 1e-3 # Convert V to mV  
-                print('Correcting source units to millivolts...')
+                print('Converting source units to millivolts...')
                 if source_divider*SOURCE_UNIT != 1.0:
                     divide = '%.3g' % (source_divider*SOURCE_UNIT)
                     axis = ['X','Y','Z'][self.columns.index(source_index)+(self.settings['2D']=='True')] 
@@ -1250,7 +1329,7 @@ class Data3D:
         for gate in fine_gates:
             gate_index = self.channels.index(gate)
             if gate_index in self.columns[:3-(self.settings['2D']=='True')]:                              
-                print('Correcting '+gate+' units to volts...')
+                print('Converting '+gate+' units to volts...')
                 DAC_FINE_DIVIDER = 200
                 DAC_FINE_OFFSET = 0.05
                 divide = '%.3g' % DAC_FINE_DIVIDER
@@ -1293,7 +1372,7 @@ class Data3D:
             curr_index = self.channels.index('dc_curr')
             if curr_index in self.columns[:3-(self.settings['2D']=='True')]:
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
-                print('Correcting dc_curr units to nano-amperes...')
+                print('Converting dc_curr units to nano-amperes...')
                 CURR_UNIT = 1e-9 # Ampere to nano-ampere
                 if curr_amp*CURR_UNIT != 1.0:
                     divide = '%.3g' % (curr_amp*CURR_UNIT)
@@ -1329,19 +1408,22 @@ class Data3D:
                     self.settings['ylabel'] = 'd$I$/d$V$ ($\mu$S)'
                
     def processed_to_raw(self):
-        print('processed_to_raw')
+        if PRINT_FUNCTION_CALLS:
+            print('processed_to_raw')
         self.processed_data = [np.copy(self.raw_data[i]) for i in self.columns]
     
     def refresh_data(self, update_color_limits=False, refresh_unit_conversion=False):
-        print('refresh_data')
+        if PRINT_FUNCTION_CALLS:
+            print('refresh_data')
         if self.from_npy_file:
             print('.npy files cannot be refreshed...')
         else:
             self.load_data_from_file(self.filepath)
-            self.apply_all_filters(update_color_limits, refresh_unit_conversion)
+            self.apply_all_filters(update_color_limits, refresh_unit_conversion)        
     
     def add_plot(self):
-        print('add_plot')
+        if PRINT_FUNCTION_CALLS:
+            print('add_plot')
         data = self.processed_data
         cmap = self.view_settings['Color Map']
         if self.view_settings['Reverse']:
@@ -1356,7 +1438,8 @@ class Data3D:
         self.apply_plot_settings()
       
     def add_plot_2d(self):
-        print('add_plot_2d')
+        if PRINT_FUNCTION_CALLS:
+            print('add_plot_2d')
         data = self.processed_data
         cmap = self.view_settings['Color Map']
         if self.view_settings['Reverse']:
@@ -1366,7 +1449,8 @@ class Data3D:
         self.apply_plot_settings()        
         
     def reset_view_settings(self, overrule=False):
-        print('reset_view_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('reset_view_settings')
         if self.view_settings['Locked'] == 0 or overrule == True:
             self.view_settings['Minimum'] = np.min(self.processed_data[2])
             self.view_settings['Maximum'] = np.max(self.processed_data[2])
@@ -1379,12 +1463,15 @@ class Data3D:
             self.view_settings['MidLock'] = 0
             
     def reset_midpoint(self):
+        if PRINT_FUNCTION_CALLS:
+            print('reset_midpoint')
         if self.view_settings['MidLock'] == 0:
             self.view_settings['Midpoint'] = 0.5*(self.view_settings['Minimum']+
                                                  self.view_settings['Maximum'])
 
     def adjust_norm_plot(self, midpoint='reset'):
-        print('adjust_norm_plot '+midpoint)
+        if PRINT_FUNCTION_CALLS:
+            print('adjust_norm_plot '+midpoint)
         min_map = self.view_settings['Minimum']
         mid_map = self.view_settings['Midpoint']
         max_map = self.view_settings['Maximum']
@@ -1402,7 +1489,8 @@ class Data3D:
         self.apply_view_settings()
         
     def apply_plot_settings(self):
-        print('apply_plot_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('apply_plot_settings')
         settings = self.settings
         self.axes.set_xlabel(settings['xlabel'], size=settings['labelsize'])
         self.axes.set_ylabel(settings['ylabel'], size=settings['labelsize'])
@@ -1421,7 +1509,8 @@ class Data3D:
             
 
     def apply_view_settings(self):
-        print('apply_view_settings')
+        if PRINT_FUNCTION_CALLS:
+            print('apply_view_settings')
         if self.settings['2D'] == 'False':
             self.view_settings['Norm'] = MidpointNormalize(
                     vmin=self.view_settings['Minimum'], 
@@ -1435,7 +1524,8 @@ class Data3D:
                 self.cbar.ax.tick_params(labelsize=self.settings['ticksize'])          
     
     def apply_colormap(self):
-        print('apply_colormap '+self.view_settings['Color Map'])
+        if PRINT_FUNCTION_CALLS:
+            print('apply_colormap '+self.view_settings['Color Map'])
         cmap = self.view_settings['Color Map']
         if self.view_settings['Reverse']:
             cmap = cmap+'_r'
@@ -1446,17 +1536,20 @@ class Data3D:
             
     
     def apply_filter(self, filter_settings, update_color_limits=True):
-        print('apply_filter')
+        if PRINT_FUNCTION_CALLS:
+            print('apply_filter')
         self.filters.append(filter_settings)
         if filter_settings['Checked']:
-            print('Applying '+filter_settings['Name']+'...')
+            if PRINT_FUNCTION_CALLS:
+                print('Applying '+filter_settings['Name']+'...')
             self.processed_data = filters.apply(self.processed_data, filter_settings)
             if update_color_limits:
                 self.reset_view_settings()
                 self.apply_view_settings()
 
     def apply_all_filters(self, update_color_limits=True, refresh_unit_conversion=False):
-        print('apply_all_filters')
+        if PRINT_FUNCTION_CALLS:
+            print('apply_all_filters')
         self.processed_to_raw()
         if self.rcfilter_correct:
             self.correct_for_rcfilters()
@@ -1465,7 +1558,8 @@ class Data3D:
             self.meta_unit_conversion()
         for _, filter_settings in enumerate(self.filters):
             if filter_settings['Checked']:
-                print('Applying '+filter_settings['Name']+'...')
+                if PRINT_FUNCTION_CALLS:
+                    print('Applying '+filter_settings['Name']+'...')
                 self.processed_data = filters.apply(self.processed_data, filter_settings)
         if update_color_limits:
             self.reset_view_settings()
@@ -1475,7 +1569,8 @@ class Data3D:
                 pass
             
     def update_linecut(self):
-        #print('update_linecut')
+        if PRINT_FUNCTION_CALLS:
+            print('update_linecut')
         if self.linecut_window.running:
             try:
                 self.linecut.remove()
@@ -1520,7 +1615,8 @@ class Data3D:
             self.linecut_window.show()
     
     def update_multiple_linecuts(self):
-        print('plotMultipleLineCuts')
+        if PRINT_FUNCTION_CALLS:
+            print('plotMultipleLineCuts')
         if self.multi_orientation == 'horizontal':
             self.multi_linecuts_window.xlabel = self.settings['xlabel']
             self.multi_linecuts_window.zlabel = self.settings['ylabel']
@@ -1535,6 +1631,8 @@ class Data3D:
         self.multi_linecuts_window.show()
         
     def open_fft_window(self):
+        if PRINT_FUNCTION_CALLS:
+            print('open_fft_window')
         if self.fft_orientation == 'vertical':
             self.fft = np.fft.rfft(self.processed_data[2], axis=1)
         elif self.fft_orientation == 'horizontal':
@@ -1567,7 +1665,6 @@ class LineCutWindow(QtWidgets.QWidget):
         self.button_layout.addWidget(self.save_button)
         self.button_layout.addWidget(self.save_image_button)
         self.button_layout.addStretch()
-        #if multiple:
         self.init_fit()
         self.vertical_layout.addLayout(self.button_layout)
         self.setLayout(self.vertical_layout)
