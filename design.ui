@@ -31,16 +31,6 @@
         <layout class="QGridLayout" name="gridLayout_2">
          <item row="0" column="0">
           <layout class="QGridLayout" name="files_layout">
-           <item row="1" column="0" colspan="3">
-            <widget class="QListWidget" name="file_list">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-            </widget>
-           </item>
            <item row="4" column="0">
             <widget class="QPushButton" name="up_file_button">
              <property name="minimumSize">
@@ -51,6 +41,16 @@
              </property>
              <property name="text">
               <string>Up</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0" colspan="3">
+            <widget class="QListWidget" name="file_list">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
              </property>
             </widget>
            </item>
@@ -636,30 +636,40 @@
      <height>26</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menu_file">
+   <widget class="QMenu" name="menu_auto_refresh">
     <property name="title">
-     <string>File</string>
+     <string>Auto Refresh</string>
     </property>
-    <widget class="QMenu" name="menu_save">
-     <property name="title">
-      <string>Save Session...</string>
-     </property>
-     <addaction name="action_current_file"/>
-     <addaction name="action_all_files"/>
-     <addaction name="action_filters"/>
-    </widget>
-    <widget class="QMenu" name="menu_merge">
-     <property name="title">
-      <string>Merge Data...</string>
-     </property>
-     <addaction name="action_merge_raw"/>
-     <addaction name="action_merge_processed"/>
-    </widget>
-    <addaction name="menu_save"/>
-    <addaction name="action_save_image"/>
-    <addaction name="menu_merge"/>
+    <addaction name="action_refresh_30s"/>
+    <addaction name="action_refresh_5m"/>
+    <addaction name="action_refresh_30m"/>
+    <addaction name="action_refresh_stop"/>
    </widget>
-   <addaction name="menu_file"/>
+   <widget class="QMenu" name="menu_save_session">
+    <property name="title">
+     <string>Save Session</string>
+    </property>
+    <addaction name="action_current_file"/>
+    <addaction name="action_all_files"/>
+    <addaction name="action_filters"/>
+   </widget>
+   <widget class="QMenu" name="menu_merge_data">
+    <property name="title">
+     <string>Merge Data</string>
+    </property>
+    <addaction name="action_merge_raw"/>
+    <addaction name="action_merge_processed"/>
+   </widget>
+   <widget class="QMenu" name="menu_save_image">
+    <property name="title">
+     <string>Save Image</string>
+    </property>
+    <addaction name="action_save_canvas"/>
+   </widget>
+   <addaction name="menu_save_image"/>
+   <addaction name="menu_save_session"/>
+   <addaction name="menu_auto_refresh"/>
+   <addaction name="menu_merge_data"/>
   </widget>
   <action name="actionNew">
    <property name="text">
@@ -696,16 +706,6 @@
     <string>All Files...</string>
    </property>
   </action>
-  <action name="action_filters">
-   <property name="text">
-    <string>Filters</string>
-   </property>
-  </action>
-  <action name="action_current_file">
-   <property name="text">
-    <string>Current File...</string>
-   </property>
-  </action>
   <action name="actionExit">
    <property name="text">
     <string>Quit...</string>
@@ -714,11 +714,6 @@
   <action name="actionQuit">
    <property name="text">
     <string>Quit...</string>
-   </property>
-  </action>
-  <action name="action_all_files">
-   <property name="text">
-    <string>All Files...</string>
    </property>
   </action>
   <action name="action_eps">
@@ -741,6 +736,71 @@
     <string>Load Session...</string>
    </property>
   </action>
+  <action name="action_save_image">
+   <property name="text">
+    <string>Save Image...</string>
+   </property>
+  </action>
+  <action name="action_canvas_to_script">
+   <property name="text">
+    <string>Generate Script...</string>
+   </property>
+  </action>
+  <action name="actionEnable_Auto_Refresh">
+   <property name="text">
+    <string>Enable Auto Refresh...</string>
+   </property>
+  </action>
+  <action name="actionEvery_10_s">
+   <property name="text">
+    <string>Every 2 s...</string>
+   </property>
+  </action>
+  <action name="actionEvery_5_s">
+   <property name="text">
+    <string>Every 5 s...</string>
+   </property>
+  </action>
+  <action name="action_refresh_5m">
+   <property name="text">
+    <string>Every 5 minutes...</string>
+   </property>
+  </action>
+  <action name="actionEvery_5_minutes">
+   <property name="text">
+    <string>Every 5 minutes...</string>
+   </property>
+  </action>
+  <action name="action_refresh_stop">
+   <property name="text">
+    <string>Stop...</string>
+   </property>
+  </action>
+  <action name="action_refresh_30s">
+   <property name="text">
+    <string>Every 30 seconds...</string>
+   </property>
+  </action>
+  <action name="action_refresh_30m">
+   <property name="text">
+    <string>Every 30 minutes...</string>
+   </property>
+  </action>
+  <action name="action_current_file">
+   <property name="text">
+    <string>Current File...</string>
+   </property>
+  </action>
+  <action name="action_all_files">
+   <property name="text">
+    <string>All Files...</string>
+   </property>
+  </action>
+  <action name="action_filters">
+   <property name="text">
+    <string>Filters...</string>
+   </property>
+  </action>
   <action name="action_merge_raw">
    <property name="text">
     <string>Raw Data...</string>
@@ -751,9 +811,14 @@
     <string>Processed Data...</string>
    </property>
   </action>
-  <action name="action_save_image">
+  <action name="action_save_canvas">
    <property name="text">
-    <string>Save Image...</string>
+    <string>Save Canvas...</string>
+   </property>
+  </action>
+  <action name="action_save_raster">
+   <property name="text">
+    <string>Raster...</string>
    </property>
   </action>
  </widget>
