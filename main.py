@@ -24,7 +24,7 @@ import design
 import filters
 import fits
 
-PRINT_FUNCTION_CALLS = True # print function commands in terminal when called
+PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 
 rcParams['pdf.fonttype'] = 42
@@ -805,7 +805,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
             data_name, _ = os.path.splitext(data.filepath)
-            formats = 'Portable Network Graphic (*.png);;Adobe Acrobat (*.pdf)'
+            formats = 'Adobe Acrobat (*.pdf);;Portable Network Graphic (*.png)'
             filename, extension = QtWidgets.QFileDialog.getSaveFileName(
                     self, 'Save Figure As...', data_name, formats)
             if filename:
@@ -1199,7 +1199,7 @@ class Data3D:
                 'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
                 'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
                 'columns': '0,1,2', 'colorbar': 'True', 'minorticks': 'False', 
-                'delimiter': '', 'lut': '512', 'rasterized': 'True', 'dpi': 'figure', 
+                'delimiter': '', 'lut': '512', 'rasterized': 'True', 'dpi': '300', 
                 'transparent': 'False', 'frameon': 'False', '2D': 'False', 'rc-filter': ''}
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
