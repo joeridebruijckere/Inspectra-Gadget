@@ -24,7 +24,7 @@ import design
 import filters
 import fits
 
-PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
+PRINT_FUNCTION_CALLS = True # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 
 rcParams['pdf.fonttype'] = 42
@@ -322,7 +322,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     except AttributeError:
                         pass
                     else:
-                        data.update_multiple_linecuts()
+                        if data.multi_linecuts_window.isVisible():
+                            data.update_multiple_linecuts()
         self.canvas.draw()
           
     def refresh_plot(self):
@@ -1008,7 +1009,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             elif signal.text() == 'Plot vertical linecuts...':
                 plot_data.multi_orientation = 'vertical'
             plot_data.multi_linecuts_window = LineCutWindow(multiple=True)
+            
             plot_data.update_multiple_linecuts()
+            print(plot_data.multi_linecuts_window.isVisible())
         elif signal.text() == 'Enable RC-filter correction...':
             plot_data.rcfilter_correct = True
             plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
@@ -1616,7 +1619,7 @@ class Data3D:
     
     def update_multiple_linecuts(self):
         if PRINT_FUNCTION_CALLS:
-            print('plotMultipleLineCuts')
+            print('update_multiple_linecuts')
         if self.multi_orientation == 'horizontal':
             self.multi_linecuts_window.xlabel = self.settings['xlabel']
             self.multi_linecuts_window.zlabel = self.settings['ylabel']
