@@ -1093,9 +1093,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 plot_data.linecut_window
             except AttributeError:
                 plot_data.linecut_window = LineCutWindow()
+            plot_data.linecut_window.running = True
             plot_data.update_linecut()
             self.canvas.draw()
             plot_data.drawing_diagonal_linecut = False
+            plot_data.linecut_window.activateWindow()            
         elif signal.text() == 'FFT vertical...':
             plot_data.fft_orientation = 'vertical'
             plot_data.open_fft_window()
