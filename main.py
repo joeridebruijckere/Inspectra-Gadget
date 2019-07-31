@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on July 4 2019
+Last updated on July 30 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -200,6 +200,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.refresh_file_button.clicked.connect(self.refresh_plot)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
         self.down_file_button.clicked.connect(lambda: self.move_file('down'))
+        self.file_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.file_list.customContextMenuRequested.connect(self.open_item_menu)
     
     def init_canvas(self):
         self.figure = Figure()
@@ -664,6 +666,38 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 data.apply_view_settings()
                 data.apply_colormap()
                 self.canvas.draw()
+
+    def open_item_menu(self):
+        if PRINT_FUNCTION_CALLS:
+            print('open_item_menu')
+        current_item = self.file_list.currentItem()
+        if current_item:
+            menu = QtWidgets.QMenu(self)
+            actions = ['Check only this item...','Check all...']
+            for entry in actions:
+                action = QtWidgets.QAction(entry, self)
+                menu.addAction(action)
+            menu.triggered[QtWidgets.QAction].connect(self.do_item_action)
+            menu.popup(QtGui.QCursor.pos())
+            
+    def do_item_action(self, signal):
+        if PRINT_FUNCTION_CALLS:
+            print('open_item_menu')
+        current_item = self.file_list.currentItem()
+        if current_item:
+            if signal.text() == 'Check only this item...':
+                self.file_list.itemChanged.disconnect(self.file_checked)
+                for item_index in range(self.file_list.count()):
+                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+                current_item.setCheckState(QtCore.Qt.Checked)
+                self.file_list.itemChanged.connect(self.file_checked)
+                self.update_plots()
+            elif signal.text() == 'Check all...':
+                self.file_list.itemChanged.disconnect(self.file_checked)
+                for item_index in range(self.file_list.count()):                        
+                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Checked)
+                    self.file_list.itemChanged.connect(self.file_checked)
+                self.update_plots()
     
     def open_plot_settings_menu(self):
         if PRINT_FUNCTION_CALLS:
@@ -1344,9 +1378,9 @@ class Data3D:
                     self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
                                          'Setting 1': fine_offset, 'Setting 2': '', 'Checked': 2})
                 if self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate Voltage (V)'
+                    self.settings['ylabel'] = 'Gate Voltage '+gate[1:]+' (V)'
                 elif self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate Voltage (V)'
+                    self.settings['xlabel'] = 'Gate Voltage '+gate[1:]+' (V)'
                 print('Adding coarse gate voltage...')
                 coarse_gate = gate[:-1]
                 for instrument in self.meta_data['register']['instruments']:
@@ -1367,9 +1401,9 @@ class Data3D:
             gate_index = self.channels.index(gate)
             if gate_index in self.columns[:3-(self.settings['2D']=='True')]:
                 if self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate Voltage (V)'
+                    self.settings['ylabel'] = 'Gate Voltage '+gate[1]+' (V)'
                 elif self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate Voltage (V)'  
+                    self.settings['xlabel'] = 'Gate Voltage '+gate[1]+' (V)'  
             
         if 'dc_curr' in self.channels:
             curr_index = self.channels.index('dc_curr')
