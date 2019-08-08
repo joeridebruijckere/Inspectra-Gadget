@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on July 30 2019
+Last updated on Aug 6 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -15,7 +15,7 @@ from scipy.ndimage import map_coordinates
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-from matplotlib.colors import Normalize, LogNorm
+from matplotlib.colors import Normalize, LogNorm, ListedColormap
 from matplotlib import cm
 from matplotlib.widgets import Cursor
 from matplotlib import rcParams
@@ -24,6 +24,7 @@ import design
 import filters
 import fits
 
+DEFAULT_COLUMNS = '0,1,3'
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 
@@ -71,33 +72,46 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     
     def init_view_settings(self):
         self.cmaps = [('Uniform', [
-                    'magma', 'viridis', 'plasma', 'inferno']),
-                 ('Sequential', [
-                    'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
-                    'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
-                    'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']),
-                 ('Sequential 2', [
-                    'binary', 'gist_yarg', 'gist_gray', 'gray', 'bone', 'pink',
-                    'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia',
-                    'hot', 'afmhot', 'gist_heat', 'copper']),
-                 ('Diverging', [
-                    'RdBu', 'PRGn', 'BrBG', 'PuOr', 'RdGy', 'PiYG',
-                    'RdYlBu', 'RdYlGn', 'Spectral', 'coolwarm', 'bwr', 'seismic']),
-                 ('Qualitative', [
-                    'Pastel1', 'Pastel2', 'Paired', 'Accent',
-                    'Dark2', 'Set1', 'Set2', 'Set3',
-                    'tab10', 'tab20', 'tab20b', 'tab20c']),
-                 ('Miscellaneous', [
-                    'flag', 'prism', 'ocean', 'gist_earth', 'terrain', 'gist_stern',
-                    'gnuplot', 'gnuplot2', 'CMRmap', 'cubehelix', 'brg', 'hsv',
-                    'gist_rainbow', 'rainbow', 'jet', 'nipy_spectral', 'gist_ncar'])]
-        for n in range(6):    
+            'viridis', 'plasma', 'inferno', 'magma', 'cividis']),
+         ('Sequential', [
+            'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
+            'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
+            'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']),
+         ('Sequential (2)', [
+            'binary', 'gist_yarg', 'gist_gray', 'gray', 'bone', 'pink',
+            'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia',
+            'hot', 'afmhot', 'gist_heat', 'copper']),
+         ('Diverging', [
+            'PiYG', 'PRGn', 'BrBG', 'PuOr', 'RdGy', 'RdBu',
+            'RdYlBu', 'RdYlGn', 'Spectral', 'coolwarm', 'bwr', 'seismic']),
+         ('Cyclic', ['twilight', 'twilight_shifted', 'hsv']),
+         ('Qualitative', [
+            'Pastel1', 'Pastel2', 'Paired', 'Accent',
+            'Dark2', 'Set1', 'Set2', 'Set3',
+            'tab10', 'tab20', 'tab20b', 'tab20c']),
+         ('Miscellaneous', [
+            'flag', 'prism', 'ocean', 'gist_earth', 'terrain', 'gist_stern',
+            'gnuplot', 'gnuplot2', 'CMRmap', 'cubehelix', 'brg',
+            'gist_rainbow', 'rainbow', 'jet', 'nipy_spectral', 'gist_ncar']),
+         ('Hybrid', ['bone+magma_r'])]
+        for n in range(len(self.cmaps)):    
             self.colormap_type_box.addItem(self.cmaps[n][0])
         self.colormap_box.addItems(self.cmaps[0][1])
         self.min_line_edit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.max_line_edit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.mid_line_edit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.copied_view_settings = None
+        for hybrid_cmap in self.cmaps[-1][-1]:
+            n_colors = 512
+            top = cm.get_cmap(hybrid_cmap.split('+')[1], n_colors)
+            bottom = cm.get_cmap(hybrid_cmap.split('+')[0], n_colors)
+            newcolors = np.vstack((top(np.linspace(0, 1, n_colors)),
+                                   bottom(np.linspace(0, 1, n_colors))))
+            newcolors_r = newcolors[::-1]
+            newcmp = ListedColormap(newcolors, name=hybrid_cmap)
+            newcmp_r = ListedColormap(newcolors_r, name=hybrid_cmap+'_r')
+            cm.register_cmap(cmap=newcmp)
+            cm.register_cmap(cmap=newcmp_r)
     
     def init_filters(self):
         self.default_filter_settings = {
@@ -216,35 +230,35 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def open_files(self, filenames=None):
         if PRINT_FUNCTION_CALLS:
             print('open_files')
-        try:
-            if not filenames:
-                filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
-                        self, 'Open File', '', 'Data Files (*.dat *.npy)')
-            if filenames:
-                self.file_list.itemChanged.disconnect(self.file_checked)
-                for filename in filenames:
-                    print('Open '+filename)
-                    if filename.split('.')[-1] == 'dat':
-                        self.add_file(filename)
-                    elif filename.split('.')[-1] == 'npy':
-                        loaded_session = np.load(filename, allow_pickle=True)
-                        for session_item in loaded_session:
-                            self.add_file(session_item['File Name'], data=session_item['Raw Data'])
-                            item = self.file_list.item(self.file_list.count()-1)
-                            data = item.data(QtCore.Qt.UserRole)
-                            data.settings = session_item['Settings']
-                            data.filters = session_item['Filters']
-                            data.view_settings = session_item['View Settings']
-                            data.apply_all_filters(update_color_limits=False)
-                last_item = self.file_list.item(self.file_list.count()-1)
-                self.file_list.setCurrentItem(last_item)
-                for item_index in range(self.file_list.count()-1):
-                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-                self.show_current_all()
-                self.file_list.itemChanged.connect(self.file_checked)
-                last_item.setCheckState(QtCore.Qt.Checked)
-        except:
-            print('Could not open file(s)...')
+    #try:
+        if not filenames:
+            filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                    self, 'Open File', '', 'Data Files (*.dat *.npy)')
+        if filenames:
+            self.file_list.itemChanged.disconnect(self.file_checked)
+            for filename in filenames:
+                print('Open '+filename)
+                if filename.split('.')[-1] == 'dat':
+                    self.add_file(filename)
+                elif filename.split('.')[-1] == 'npy':
+                    loaded_session = np.load(filename, allow_pickle=True)
+                    for session_item in loaded_session:
+                        self.add_file(session_item['File Name'], data=session_item['Raw Data'])
+                        item = self.file_list.item(self.file_list.count()-1)
+                        data = item.data(QtCore.Qt.UserRole)
+                        data.settings = session_item['Settings']
+                        data.filters = session_item['Filters']
+                        data.view_settings = session_item['View Settings']
+                        data.apply_all_filters(update_color_limits=False)
+            last_item = self.file_list.item(self.file_list.count()-1)
+            self.file_list.setCurrentItem(last_item)
+            for item_index in range(self.file_list.count()-1):
+                self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+            self.show_current_all()
+            self.file_list.itemChanged.connect(self.file_checked)
+            last_item.setCheckState(QtCore.Qt.Checked)
+    #except:
+     #   print('Could not open file(s)...')
             
     def add_file(self, file, data=None):
         if PRINT_FUNCTION_CALLS:
@@ -1144,11 +1158,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         data_shape = data.processed_data[0].shape
                         if data.orientation == 'horizontal':
                             new_index = data.selected_indices[1]+int(event.step)
-                            if new_index >= 0 and new_index < data_shape[1]-1:
+                            if new_index >= 0 and new_index < data_shape[1]:
                                 data.selected_indices[1] = new_index
                         elif data.orientation == 'vertical':
                             new_index = data.selected_indices[0]+int(event.step)
-                            if new_index >= 0 and new_index < data_shape[0]-1:
+                            if new_index >= 0 and new_index < data_shape[0]:
                                 data.selected_indices[0] = new_index
                         data.update_linecut()
                         self.canvas.draw()
@@ -1234,7 +1248,7 @@ class Data3D:
                 'title': '', 'xlabel': 'Gate Voltage (V)',
                 'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
                 'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
-                'columns': '0,1,2', 'colorbar': 'True', 'minorticks': 'False', 
+                'columns': DEFAULT_COLUMNS, 'colorbar': 'True', 'minorticks': 'False', 
                 'delimiter': '', 'lut': '512', 'rasterized': 'True', 'dpi': '300', 
                 'transparent': 'False', 'frameon': 'False', '2D': 'False', 'rc-filter': ''}
         self.default_filters = []
@@ -1283,7 +1297,7 @@ class Data3D:
         if PRINT_FUNCTION_CALLS:
             print('load_data_from_file')
         column_data = np.genfromtxt(filepath, delimiter=self.settings['delimiter'])
-        _, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
+        unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
         if len(indices) > 1: # if first column has more than one repeated value
             l0 = np.sort(indices)[1]
         else:
@@ -1298,7 +1312,12 @@ class Data3D:
             self.raw_data = [xq.transpose(), yq.transpose(), zq]
         else:
             self.settings['2D'] = 'False'
-            self.raw_data = [np.reshape(column_data[0:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
+            if indices[1] > indices[0]:
+                self.raw_data = [np.reshape(column_data[:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
+            else:
+                self.raw_data = [np.reshape(column_data[l0*l1-1::-1,x], (l1,l0)) for x in range(column_data.shape[1])]
+            if self.raw_data[1][0,0] > self.raw_data[1][0,1]:
+                self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
 
     def interpret_meta_file(self):
         if PRINT_FUNCTION_CALLS:
@@ -1620,22 +1639,20 @@ class Data3D:
                 x = self.processed_data[0][:,self.selected_indices[1]]
                 y = self.processed_data[2][:,self.selected_indices[1]]
                 value = self.processed_data[1][0,self.selected_indices[1]]
-                value_2 = self.processed_data[1][0,self.selected_indices[1]+1]
                 self.linecut_window.xlabel = self.settings['xlabel']
                 self.linecut_window.zlabel = self.settings['ylabel']
                 self.linecut_window.title = self.settings['ylabel']+' = '+str(value)
                 self.linecut = self.axes.axhline(
-                        y=0.5*(value+value_2), linestyle='dashed', linewidth=0.5, color='k')
+                        y=value, linestyle='dashed', linewidth=0.5, color='k')
             elif self.orientation == 'vertical':
                 x = self.processed_data[1][self.selected_indices[0],:]
                 y = self.processed_data[2][self.selected_indices[0],:]
                 value = self.processed_data[0][self.selected_indices[0],0]
-                value_2 = self.processed_data[0][self.selected_indices[0]+1,0]
                 self.linecut_window.xlabel = self.settings['ylabel']
                 self.linecut_window.zlabel = self.settings['xlabel']
                 self.linecut_window.title = self.settings['xlabel']+' = '+str(value)
                 self.linecut = self.axes.axvline(
-                        x=0.5*(value+value_2), linestyle='dashed', linewidth=0.5, color='k')
+                        x=value, linestyle='dashed', linewidth=0.5, color='k')
             elif self.orientation == 'diagonal':
                 i_x0, i_y0 = self.linecut_from
                 i_x1, i_y1 = self.linecut_to
@@ -1910,7 +1927,6 @@ class LineCutWindow(QtWidgets.QWidget):
         self.draw_plots()
         
     def closeEvent(self, event):
-        print('closeEvent')
         self.running = False
         
     def save_data(self):
@@ -2021,8 +2037,6 @@ class NavigationToolbarMod(NavigationToolbar):
         ('Pan', 'Pan axes with left mouse, zoom with right', 'move', 'pan'),
         ('Zoom', 'Zoom to rectangle', 'zoom_to_rect', 'zoom'),
         ('Subplots', 'Configure subplots', 'subplots', 'configure_subplots'))
-        #(None, None, None, None),
-        #('Save', 'Save the figure', 'filesave', 'save_figure'))
     
 def main():
     app = QtWidgets.QApplication(sys.argv)
