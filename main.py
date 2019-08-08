@@ -24,7 +24,7 @@ import design
 import filters
 import fits
 
-DEFAULT_COLUMNS = '0,1,2'
+DEFAULT_COLUMNS = '0,1,3'
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 
@@ -230,35 +230,35 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def open_files(self, filenames=None):
         if PRINT_FUNCTION_CALLS:
             print('open_files')
-    #try:
-        if not filenames:
-            filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
-                    self, 'Open File', '', 'Data Files (*.dat *.npy)')
-        if filenames:
-            self.file_list.itemChanged.disconnect(self.file_checked)
-            for filename in filenames:
-                print('Open '+filename)
-                if filename.split('.')[-1] == 'dat':
-                    self.add_file(filename)
-                elif filename.split('.')[-1] == 'npy':
-                    loaded_session = np.load(filename, allow_pickle=True)
-                    for session_item in loaded_session:
-                        self.add_file(session_item['File Name'], data=session_item['Raw Data'])
-                        item = self.file_list.item(self.file_list.count()-1)
-                        data = item.data(QtCore.Qt.UserRole)
-                        data.settings = session_item['Settings']
-                        data.filters = session_item['Filters']
-                        data.view_settings = session_item['View Settings']
-                        data.apply_all_filters(update_color_limits=False)
-            last_item = self.file_list.item(self.file_list.count()-1)
-            self.file_list.setCurrentItem(last_item)
-            for item_index in range(self.file_list.count()-1):
-                self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-            self.show_current_all()
-            self.file_list.itemChanged.connect(self.file_checked)
-            last_item.setCheckState(QtCore.Qt.Checked)
-    #except:
-     #   print('Could not open file(s)...')
+        try:
+            if not filenames:
+                filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                        self, 'Open File', '', 'Data Files (*.dat *.npy)')
+            if filenames:
+                self.file_list.itemChanged.disconnect(self.file_checked)
+                for filename in filenames:
+                    print('Open '+filename)
+                    if filename.split('.')[-1] == 'dat':
+                        self.add_file(filename)
+                    elif filename.split('.')[-1] == 'npy':
+                        loaded_session = np.load(filename, allow_pickle=True)
+                        for session_item in loaded_session:
+                            self.add_file(session_item['File Name'], data=session_item['Raw Data'])
+                            item = self.file_list.item(self.file_list.count()-1)
+                            data = item.data(QtCore.Qt.UserRole)
+                            data.settings = session_item['Settings']
+                            data.filters = session_item['Filters']
+                            data.view_settings = session_item['View Settings']
+                            data.apply_all_filters(update_color_limits=False)
+                last_item = self.file_list.item(self.file_list.count()-1)
+                self.file_list.setCurrentItem(last_item)
+                for item_index in range(self.file_list.count()-1):
+                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+                self.show_current_all()
+                self.file_list.itemChanged.connect(self.file_checked)
+                last_item.setCheckState(QtCore.Qt.Checked)
+        except:
+            print('Could not open file(s)...')
             
     def add_file(self, file, data=None):
         if PRINT_FUNCTION_CALLS:
@@ -359,9 +359,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
         self.action_refresh_stop.setEnabled(True)
         self.auto_refresh_timer.start()
+        self.setWindowTitle('InSpectra Gadget - Auto-Refreshing Enabled')
         
     def auto_refresh_call(self):
-        self.setWindowTitle('InSpectra Gadget (auto-refreshing...)')
+        self.setWindowTitle('InSpectra Gadget - Auto-Refreshing Enabled (Auto-Refreshing...)')
         file_list = self.file_list
         checked_items = [file_list.item(index) for index in range(file_list.count()) 
                         if file_list.item(index).checkState() == 2]
@@ -370,13 +371,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 data = item.data(QtCore.Qt.UserRole)
                 data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
             self.update_plots()
-        self.setWindowTitle('InSpectra Gadget')
+        self.setWindowTitle('InSpectra Gadget - Auto-Refreshing Enabled')
             
     def stop_auto_refresh(self):
         if PRINT_FUNCTION_CALLS:
             print('stop_auto_refresh')
         self.auto_refresh_timer.stop()
         self.action_refresh_stop.setEnabled(False)
+        self.setWindowTitle('InSpectra Gadget')
         
     def move_file(self, direction):
         if PRINT_FUNCTION_CALLS:
