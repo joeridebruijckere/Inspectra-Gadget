@@ -24,7 +24,7 @@ import design
 import filters
 import fits
 
-DEFAULT_COLUMNS = '0,1,3'
+DEFAULT_COLUMNS = '0,1,2'
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 
