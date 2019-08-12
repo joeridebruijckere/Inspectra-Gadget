@@ -24,7 +24,8 @@ import design
 import filters
 import fits
 
-DEFAULT_COLUMNS = '0,1,3'
+DEFAULT_COLUMNS = '0,1,2'
+CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 
@@ -56,7 +57,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 'd$I$/d$V$ $(e^{2}/h)$', 
                         'd$^2$I/d$V^2$ (a.u.)', '|d$^2$I/d$V^2$| (a.u.)'],
                 'titlesize': font_sizes, 'labelsize': font_sizes, 'ticksize': font_sizes,
-                'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3'], '2D': [],
+                'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3','1,2,4'], '2D': [],
                 'minorticks': ['True','False'], 'delimiter': ['',','],
                 'lut': ['128','256','512','1024'], 'rasterized': ['False','True'], 
                 'dpi': ['figure'], 'transparent': ['True', 'False'], 'frameon': ['False','True']}
@@ -1462,10 +1463,21 @@ class Data3D:
                     axis = ['X','Y','Z'][self.columns.index(lockin_index)+(self.settings['2D']=='True')] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
+                if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
+                    multiply_e2h = '%.6g' % 0.0258128
+                    axis = ['X','Y','Z'][self.columns.index(lockin_index)+(self.settings['2D']=='True')] 
+                    self.filters.append({'Name': 'Multiply', 'Method': axis, 
+                                         'Setting 1': multiply_e2h, 'Setting 2': '', 'Checked': 2})
                 if self.columns.index(lockin_index) == 2:
-                    self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
+                    if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
+                        self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
+                    else:
+                        self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
                 elif self.settings['2D'] == 'True' and self.columns.index(lockin_index) == 1:
-                    self.settings['ylabel'] = 'd$I$/d$V$ ($\mu$S)'
+                    if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
+                        self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
+                    else:
+                        self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
                
     def processed_to_raw(self):
         if PRINT_FUNCTION_CALLS:
