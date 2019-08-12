@@ -38,7 +38,7 @@ def get_list(filter_name=''):
             'Swap XY': [], 'Flip': ['Left Right','Up Down'], 
             'Normalize': ['Minimum', 'Maximum', 'Point'], 
             'Offset': ['X','Y','Z'], 'Absolute': [], 'Multiply': ['X','Y','Z'], 
-            'Slope': [], 'Logarithm': ['log10','ln'], 'Curvature': ['X','Y'],
+            'Slope': [], 'Logarithm': ['Mask','Shift','Abs'], 'Curvature': ['X','Y'],
             'Band cut': ['Y', 'X'], 'Interp': ['linear','cubic','quintic'],
             'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z']}
     if filter_name:
@@ -221,11 +221,16 @@ def mulitply(data, method, setting1, setting2):
     return data
 
 def logarithm(data, method, setting1, setting2):
-    abs_data = np.absolute(data[2])
-    if method == 'log10':
-        data[2] = np.log10(abs_data)
-    elif method == 'ln':
-        data[2] = np.log(abs_data)
+    if method == 'Mask':
+        data[2] = np.ma.log10(data[2])        
+    elif method == 'Shift':
+        min_value = np.amin(data[2])
+        if min_value <= 0.0:
+            data[2] = np.ma.log10(data[2]-min_value)
+        else:
+            data[2] = np.ma.log10(data[2])
+    elif method == 'Abs':
+        data[2] = np.ma.log10(np.abs(data[2]))
     return data
 
 def curvature(data, method, c0, setting2): # TODODODOD

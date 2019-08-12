@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on Aug 6 2019
+Last updated on Aug 12 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -148,7 +148,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                              'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
                 'Slope': {'Name': 'Slope', 'Method': '',
                           'Setting 1': '0', 'Setting 2': '-1', 'Checked': 0},
-                'Logarithm': {'Name': 'Logarithm', 'Method': 'log10',
+                'Logarithm': {'Name': 'Logarithm', 'Method': 'Mask',
                               'Setting 1': '', 'Setting 2': '', 'Checked': 2},
                 'Curvature': {'Name': 'Curvature', 'Method': 'Y',
                              'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
