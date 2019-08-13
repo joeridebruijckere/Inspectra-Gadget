@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on Aug 12 2019
+Last updated on Aug 13 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -24,10 +24,14 @@ import design
 import filters
 import fits
 
+# Default settings Copenhagen files
 DEFAULT_COLUMNS = '0,1,2'
+DEFAULT_CHANNEL = 'lockin_curr/X'
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
-PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
+
+# Editor settings
+PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
@@ -1268,13 +1272,18 @@ class Data3D:
         else:
             self.from_npy_file = False
             self.load_data_from_file(filepath)
-        self.processed_to_raw()
         meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
         if self.filename == 'data.dat' and meta_file_exists and self.from_npy_file == False: # Copenhagen meta data file
             self.interpret_meta_file()
+            try: 
+                self.columns[2] = self.channels.index(DEFAULT_CHANNEL)
+            except:
+                print('Default channel',DEFAULT_CHANNEL,'not found...')
+            self.processed_to_raw()
             self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
             self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
         else:
+            self.processed_to_raw()
             self.channels = None
             self.meta_data = None
             self.meta_data_name = None
