@@ -1005,6 +1005,12 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                 action = QtWidgets.QAction('Diagonal linecut from...', self)
                                 plot_data.linecut_from = [int(index_x), int(index_y)]
                             menu.addAction(action)
+                            if plot_data.measurement_bounds:
+                                if plot_data.draw_full_range:
+                                    action = QtWidgets.QAction('Show measured range...', self)
+                                else:
+                                    action = QtWidgets.QAction('Show full range...', self)                                 
+                            menu.addAction(action)
                             entries = ['Hide linecuts...',
                                        'Refresh plot...',
                                        'Plot vertical linecuts...',
@@ -1122,6 +1128,16 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.canvas.draw()
             plot_data.drawing_diagonal_linecut = False
             plot_data.linecut_window.activateWindow()            
+        elif signal.text() == 'Show full range...':
+            plot_data.draw_full_range = True
+            plot_data.axes.set_xlim(left=min(plot_data.measurement_bounds), 
+                                    right=max(plot_data.measurement_bounds))
+            self.canvas.draw()
+        elif signal.text() == 'Show measured range...':
+            plot_data.draw_full_range = False
+            plot_data.axes.set_xlim(left=np.amin(plot_data.processed_data[0]), 
+                                    right=np.amax(plot_data.processed_data[0]))
+            self.canvas.draw()
         elif signal.text() == 'FFT vertical...':
             plot_data.fft_orientation = 'vertical'
             plot_data.open_fft_window()
@@ -1272,6 +1288,8 @@ class Data3D:
         else:
             self.from_npy_file = False
             self.load_data_from_file(filepath)
+        self.measurement_bounds = None
+        self.draw_full_range = False
         meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
         if self.filename == 'data.dat' and meta_file_exists and self.from_npy_file == False: # Copenhagen meta data file
             self.interpret_meta_file()
@@ -1397,6 +1415,9 @@ class Data3D:
                     self.settings['ylabel'] = 'Bias Voltage (mV)'
                 elif self.columns.index(source_index) == 0:
                     self.settings['xlabel'] = 'Bias Voltage (mV)'
+                if source_index == 0:    
+                    self.measurement_bounds = [self.meta_data['job']['from']/(source_divider*SOURCE_UNIT),
+                                               self.meta_data['job']['to']/(source_divider*SOURCE_UNIT)]
         
         fine_gates = [channel for channel in self.channels if channel[0] == 'g' and channel[-1] == 'f']
         for gate in fine_gates:
@@ -1431,6 +1452,11 @@ class Data3D:
                 coarse_offset = '%.3g' % coarse_offset_dac
                 self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
                                      'Setting 1': coarse_offset, 'Setting 2': '', 'Checked': 2})
+                if gate_index == 0:   
+                    self.measurement_bounds = [self.meta_data['job']['from']/
+                                               DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac,
+                                               self.meta_data['job']['to']/
+                                               DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac]
         
         coarse_gates = [channel for channel in self.channels if channel[0] == 'g' and len(channel) == 2]
         for gate in coarse_gates:
@@ -1440,6 +1466,9 @@ class Data3D:
                     self.settings['ylabel'] = 'Gate Voltage '+gate[1]+' (V)'
                 elif self.columns.index(gate_index) == 0:
                     self.settings['xlabel'] = 'Gate Voltage '+gate[1]+' (V)'  
+            if gate_index == 0:   
+                self.measurement_bounds = [self.meta_data['job']['from'],
+                                           self.meta_data['job']['to']]
             
         if 'dc_curr' in self.channels:
             curr_index = self.channels.index('dc_curr')
@@ -1490,6 +1519,15 @@ class Data3D:
                         self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
                     else:
                         self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
+        
+        if 'Bx' in self.channels:
+            if self.channels.index('Bx') == 0:  
+                self.measurement_bounds = [self.meta_data['job']['from'],
+                                           self.meta_data['job']['to']]
+        if 'Bz' in self.channels:
+            if self.channels.index('Bz') == 0:  
+                self.measurement_bounds = [self.meta_data['job']['from'],
+                                           self.meta_data['job']['to']]
                
     def processed_to_raw(self):
         if PRINT_FUNCTION_CALLS:
@@ -1519,6 +1557,9 @@ class Data3D:
                                   rasterized=self.settings['rasterized']=='True')
         if self.settings['colorbar'] == 'True':
             self.cbar = self.figure.colorbar(self.image, orientation='vertical')
+        if self.draw_full_range:        
+            self.axes.set_xlim(left=min(self.measurement_bounds), 
+                               right=max(self.measurement_bounds))
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
         self.apply_plot_settings()
       
