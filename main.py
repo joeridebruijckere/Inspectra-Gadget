@@ -1211,6 +1211,20 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     data.apply_view_settings()
                     self.canvas.draw()
                     self.show_current_view_settings()
+        else:
+            width, height = self.canvas.get_width_height()
+            speed = 0.04
+            if event.x < 0.25*width:
+                self.figure.subplots_adjust(left=(1+speed*event.step)*self.figure.subplotpars.left)
+            elif event.x > 0.75*width:
+                self.figure.subplots_adjust(right=(1+speed*0.5*event.step)*self.figure.subplotpars.right)
+            else:
+                if event.y < 0.25*height:
+                    self.figure.subplots_adjust(bottom=(1+speed*event.step)*self.figure.subplotpars.bottom)
+                elif event.y > 0.75*height:
+                    self.figure.subplots_adjust(top=(1+speed*0.5*event.step)*self.figure.subplotpars.top)
+            self.canvas.draw()
+            
                     
     def merge_files(self, raw_data=True):
         if PRINT_FUNCTION_CALLS:
