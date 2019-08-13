@@ -55,10 +55,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                            'Angle (degrees)','Temperature (mK)'],
                 'clabel': ['$I$ (nA)', '$I$ (a.u.)', 'Current (nA)', 'd$I$/d$V$ ($\mu$S)', 
                         'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 'd$I$/d$V$ $(e^{2}/h)$', 
-                        'd$^2$I/d$V^2$ (a.u.)', '|d$^2$I/d$V^2$| (a.u.)'],
+                        'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 'd$^2$I/d$V^2$ (a.u.)', '|d$^2$I/d$V^2$| (a.u.)'],
                 'titlesize': font_sizes, 'labelsize': font_sizes, 'ticksize': font_sizes,
                 'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3','1,2,4'], '2D': [],
-                'minorticks': ['True','False'], 'delimiter': ['',','],
+                'minorticks': ['True','False'], 'delimiter': ['',','], 'mask color': ['black','white'], 
                 'lut': ['128','256','512','1024'], 'rasterized': ['False','True'], 
                 'dpi': ['figure'], 'transparent': ['True', 'False'], 'frameon': ['False','True']}
         table = self.settings_table
@@ -500,6 +500,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
                     self.update_plots()
                     self.show_current_all()
+                elif setting_name == 'mask color':
+                    data.apply_colormap()
+                    self.canvas.draw()
                 elif setting_name == 'lut':
                     data.apply_colormap()
                     self.canvas.draw()
@@ -1252,7 +1255,7 @@ class Data3D:
                 'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
                 'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
                 'columns': DEFAULT_COLUMNS, 'colorbar': 'True', 'minorticks': 'False', 
-                'delimiter': '', 'lut': '512', 'rasterized': 'True', 'dpi': '300', 
+                'delimiter': '', 'mask color': 'white', 'lut': '512', 'rasterized': 'True', 'dpi': '300', 
                 'transparent': 'False', 'frameon': 'False', '2D': 'False', 'rc-filter': ''}
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
@@ -1497,12 +1500,13 @@ class Data3D:
         if PRINT_FUNCTION_CALLS:
             print('add_plot')
         data = self.processed_data
-        cmap = self.view_settings['Color Map']
+        cmap_str = self.view_settings['Color Map']
         if self.view_settings['Reverse']:
-            cmap = cmap+'_r'
+            cmap_str = cmap_str+'_r'
+        cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
+        cmap.set_bad(self.settings['mask color'])
         self.image = self.axes.pcolormesh(data[0], data[1], data[2], 
-                                  norm=self.view_settings['Norm'], 
-                                  cmap=cm.get_cmap(cmap, lut=int(self.settings['lut'])),
+                                  norm=self.view_settings['Norm'], cmap=cmap,
                                   rasterized=self.settings['rasterized']=='True')
         if self.settings['colorbar'] == 'True':
             self.cbar = self.figure.colorbar(self.image, orientation='vertical')
@@ -1598,13 +1602,15 @@ class Data3D:
     def apply_colormap(self):
         if PRINT_FUNCTION_CALLS:
             print('apply_colormap '+self.view_settings['Color Map'])
-        cmap = self.view_settings['Color Map']
+        cmap_str = self.view_settings['Color Map']
         if self.view_settings['Reverse']:
-            cmap = cmap+'_r'
+            cmap_str = cmap_str+'_r'
+        cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
+        cmap.set_bad(self.settings['mask color'])
         if self.settings['2D'] == 'False':
-            self.image.set_cmap(cm.get_cmap(cmap, lut=int(self.settings['lut'])))
+            self.image.set_cmap(cmap)
         else:
-            self.image[0].set_color(cm.get_cmap(cmap)(0.5))
+            self.image[0].set_color(cmap(0.5))
             
     
     def apply_filter(self, filter_settings, update_color_limits=True):
@@ -2037,8 +2043,9 @@ class MidpointNormalize(Normalize):
         Normalize.__init__(self, vmin, vmax, clip)
 
     def __call__(self, value, clip=None):
+        result, is_scalar = self.process_value(value)
         x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
-        return np.ma.masked_array(np.interp(value, x, y))
+        return np.ma.array(np.interp(value, x, y), mask=result.mask, copy=False)
 
 
 class NavigationToolbarMod(NavigationToolbar):
