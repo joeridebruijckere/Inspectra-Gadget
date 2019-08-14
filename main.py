@@ -29,6 +29,7 @@ DEFAULT_COLUMNS = '0,1,2'
 DEFAULT_CHANNEL = 'lockin_curr/X'
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
+DEFAULT_SHOW_METADATANAME = True
 
 # Editor settings
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
@@ -1386,6 +1387,8 @@ class Data3D:
                 self.settings['columns'] = self.settings['columns'][:2]+str(new_index)+self.settings['columns'][3:]
         except:
             print('Default channel',DEFAULT_CHANNEL,'not found...')
+        if DEFAULT_SHOW_METADATANAME:
+            self.settings['title'] = '<metadataname>'
     
     def correct_for_rcfilters(self):
         if PRINT_FUNCTION_CALLS:
