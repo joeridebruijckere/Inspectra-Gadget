@@ -1425,8 +1425,8 @@ class Data3D:
         bound_to = self.meta_data['job']['to']
         if isinstance(bound_from, list):
             if self.channels[self.columns[0]] in self.meta_data['job']['chans']:
-                bound_from = bound_from[self.meta_data['job']['chans'].index(self.channels(self.columns[0]))]
-                bound_to = bound_to[self.meta_data['job']['chans'].index(self.channels(self.columns[0]))]
+                bound_from = bound_from[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
+                bound_to = bound_to[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
         
         if 'source' in self.channels:
             source_index = self.channels.index('source')
