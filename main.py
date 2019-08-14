@@ -1307,10 +1307,6 @@ class Data3D:
         meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
         if self.filename == 'data.dat' and meta_file_exists and self.from_npy_file == False: # Copenhagen meta data file
             self.interpret_meta_file()
-            try: 
-                self.columns[2] = self.channels.index(DEFAULT_CHANNEL)
-            except:
-                print('Default channel',DEFAULT_CHANNEL,'not found...')
             self.processed_to_raw()
             self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
             self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
@@ -1328,7 +1324,7 @@ class Data3D:
                 'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
                 'Color Map': 'magma', 'Color Map Type': 'Uniform',
                 'Norm': MidpointNormalize(vmin=min_map, vmax=max_map, midpoint=mid_map),
-                'Locked': 0, 'MidLock': 0, 'Reverse': 2}
+                'Locked': 0, 'MidLock': 0, 'Reverse': 0}
         self.view_settings = self.default_view_settings.copy()
         self.selected_indices = [0, 0]
         self.figure = None
@@ -1380,6 +1376,16 @@ class Data3D:
         if 'source' in self.channels and 'dc_curr' in self.channels:
             DEFAULT_RC_FILTER = 8240
             self.settings['rc-filter'] = str(DEFAULT_RC_FILTER)
+        try:
+            new_index = self.channels.index(DEFAULT_CHANNEL)
+            if self.settings['2D'] == 'False':
+                self.columns[2] = new_index
+                self.settings['columns'] = self.settings['columns'][:-1]+str(new_index)
+            else:
+                self.columns[1] = new_index
+                self.settings['columns'] = self.settings['columns'][:2]+str(new_index)+self.settings['columns'][3:]
+        except:
+            print('Default channel',DEFAULT_CHANNEL,'not found...')
     
     def correct_for_rcfilters(self):
         if PRINT_FUNCTION_CALLS:
@@ -1414,6 +1420,14 @@ class Data3D:
     def meta_unit_conversion(self):
         if PRINT_FUNCTION_CALLS:
             print('meta_unit_conversion')
+         
+        bound_from = self.meta_data['job']['from']
+        bound_to = self.meta_data['job']['to']
+        if isinstance(bound_from, list):
+            if self.channels(self.columns[0]) in self.meta_data['job']['chans']:
+                bound_from = bound_from[self.meta_data['job']['chans'].index(self.channels(self.columns[0]))]
+                bound_to = bound_to[self.meta_data['job']['chans'].index(self.channels(self.columns[0]))]
+        
         if 'source' in self.channels:
             source_index = self.channels.index('source')
             if source_index in self.columns[:3-(self.settings['2D']=='True')]:
@@ -1429,9 +1443,9 @@ class Data3D:
                     self.settings['ylabel'] = 'Bias Voltage (mV)'
                 elif self.columns.index(source_index) == 0:
                     self.settings['xlabel'] = 'Bias Voltage (mV)'
-                if source_index == 0:    
-                    self.measurement_bounds = [self.meta_data['job']['from']/(source_divider*SOURCE_UNIT),
-                                               self.meta_data['job']['to']/(source_divider*SOURCE_UNIT)]
+                if source_index == 0:
+                    self.measurement_bounds = [bound_from/(source_divider*SOURCE_UNIT),
+                                               bound_to/(source_divider*SOURCE_UNIT)]
         
         fine_gates = [channel for channel in self.channels if channel[0] == 'g' and channel[-1] == 'f']
         for gate in fine_gates:
@@ -1467,10 +1481,8 @@ class Data3D:
                 self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
                                      'Setting 1': coarse_offset, 'Setting 2': '', 'Checked': 2})
                 if gate_index == 0:   
-                    self.measurement_bounds = [self.meta_data['job']['from']/
-                                               DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac,
-                                               self.meta_data['job']['to']/
-                                               DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac]
+                    self.measurement_bounds = [bound_from/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac,
+                                               bound_to/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac]
         
         coarse_gates = [channel for channel in self.channels if channel[0] == 'g' and len(channel) == 2]
         for gate in coarse_gates:
@@ -1481,8 +1493,7 @@ class Data3D:
                 elif self.columns.index(gate_index) == 0:
                     self.settings['xlabel'] = 'Gate Voltage '+gate[1]+' (V)'  
             if gate_index == 0:   
-                self.measurement_bounds = [self.meta_data['job']['from'],
-                                           self.meta_data['job']['to']]
+                self.measurement_bounds = [bound_from, bound_to]
             
         if 'dc_curr' in self.channels:
             curr_index = self.channels.index('dc_curr')
@@ -1536,12 +1547,11 @@ class Data3D:
         
         if 'Bx' in self.channels:
             if self.channels.index('Bx') == 0:  
-                self.measurement_bounds = [self.meta_data['job']['from'],
-                                           self.meta_data['job']['to']]
+                self.measurement_bounds = [bound_from, bound_to]
+        
         if 'Bz' in self.channels:
             if self.channels.index('Bz') == 0:  
-                self.measurement_bounds = [self.meta_data['job']['from'],
-                                           self.meta_data['job']['to']]
+                self.measurement_bounds = [bound_from, bound_to]
                
     def processed_to_raw(self):
         if PRINT_FUNCTION_CALLS:
