@@ -4,11 +4,12 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on Aug 13 2019
+Last updated on Aug 28 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys, os, copy, json
+from stat import ST_CTIME
 import numpy as np
 from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
@@ -30,6 +31,7 @@ DEFAULT_CHANNEL = 'lockin_curr/X'
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
 DEFAULT_SHOW_METADATANAME = True
+SHOW_SETTINGS_ON_CANVAS = False
 
 # Editor settings
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
@@ -62,10 +64,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 'd$I$/d$V$ $(e^{2}/h)$', 
                         'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 'd$^2$I/d$V^2$ (a.u.)', '|d$^2$I/d$V^2$| (a.u.)'],
                 'titlesize': font_sizes, 'labelsize': font_sizes, 'ticksize': font_sizes,
-                'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3','1,2,4'], '2D': [],
+                'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3','1,2,4'],
                 'minorticks': ['True','False'], 'delimiter': ['',','], 'mask color': ['black','white'], 
                 'lut': ['128','256','512','1024'], 'rasterized': ['False','True'], 
-                'dpi': ['figure'], 'transparent': ['True', 'False'], 'frameon': ['False','True']}
+                'dpi': ['figure'], 'transparent': ['True', 'False']}
         table = self.settings_table
         table.setColumnCount(2)
         table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
@@ -155,8 +157,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                           'Setting 1': '0', 'Setting 2': '-1', 'Checked': 0},
                 'Logarithm': {'Name': 'Logarithm', 'Method': 'Mask',
                               'Setting 1': '', 'Setting 2': '', 'Checked': 2},
-                'Curvature': {'Name': 'Curvature', 'Method': 'Y',
-                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
                 'Band cut': {'Name': 'Band cut', 'Method': 'Y',
                              'Setting 1': '20', 'Setting 2': '25', 'Checked': 0},
                 'Interp': {'Name': 'Interp', 'Method': 'linear',
@@ -182,6 +182,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.clear_files_button.clicked.connect(lambda: self.remove_files('all'))
         self.file_list.itemChanged.connect(self.file_checked)
         self.file_list.itemClicked.connect(self.file_clicked)
+        self.file_list.itemDoubleClicked.connect(self.file_double_clicked)
         self.settings_table.itemChanged.connect(self.plot_setting_edited)
         self.filters_table.itemChanged.connect(self.filters_table_edited)
         self.copy_settings_button.clicked.connect(self.copy_plot_settings)
@@ -216,6 +217,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_refresh_5m.triggered.connect(lambda: self.start_auto_refresh(time_interval=300))
         self.action_refresh_30m.triggered.connect(lambda: self.start_auto_refresh(time_interval=1800))
         self.action_refresh_stop.triggered.connect(self.stop_auto_refresh)
+        self.action_open_files_from_folder.triggered.connect(self.open_files_from_folder)
+        self.action_save_files_as_PNG.triggered.connect(lambda: self.save_files_as('.png'))
+        self.action_save_files_as_PDF.triggered.connect(lambda: self.save_files_as('.pdf'))
         self.action_refresh_stop.setEnabled(False)
         self.refresh_file_button.clicked.connect(self.refresh_plot)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
@@ -265,18 +269,22 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 last_item.setCheckState(QtCore.Qt.Checked)
         except:
             print('Could not open file(s)...')
+            raise
             
     def add_file(self, file, data=None):
         if PRINT_FUNCTION_CALLS:
             print('add_file')
         item = QtWidgets.QListWidgetItem()
-        item.setText(os.path.basename(file))
-        item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        item.setCheckState(QtCore.Qt.Unchecked)
-        self.file_list.addItem(item)
-        item.setData(QtCore.Qt.UserRole, Data3D(filepath=file, existing_data=data))
-        if item.data(QtCore.Qt.UserRole).meta_data:
-            item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)
+        try:
+            item.setData(QtCore.Qt.UserRole, Data(filepath=file, existing_data=data))
+            item.setText(os.path.basename(file))
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            self.file_list.addItem(item)
+            if item.data(QtCore.Qt.UserRole).meta_data:
+                item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)
+        except:
+            print('Could not add', file,'...')
         
     def remove_files(self, which='current'):
         if PRINT_FUNCTION_CALLS:
@@ -306,6 +314,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.file_list.setCurrentItem(item)
         except:
             print('Could not update plot(s)...')
+            raise
     
     def file_clicked(self):
         if PRINT_FUNCTION_CALLS:
@@ -314,6 +323,21 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.show_current_all()
         except:
             print('Could not show current settings...')
+            raise
+            
+    def file_double_clicked(self, item):
+        if PRINT_FUNCTION_CALLS:
+            print('file_double_clicked')
+        try:
+            self.file_list.itemChanged.disconnect(self.file_checked)
+            for item_index in range(self.file_list.count()):
+                self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+            item.setCheckState(QtCore.Qt.Checked)
+            self.file_list.itemChanged.connect(self.file_checked)
+            self.update_plots()
+        except:
+            print('Could not update plot(s)...')
+            raise
     
     def update_plots(self):
         if PRINT_FUNCTION_CALLS:
@@ -329,7 +353,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 data.figure = self.figure
                 data.axes = data.figure.add_subplot(
                         self.subplot_rows, self.subplot_cols, index+1)
-                if data.settings['2D'] == 'True':
+                if len(data.columns) == 2:
                     data.add_plot_2d()
                 else:
                     data.add_plot()
@@ -491,16 +515,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             table.clearFocus()
             try:
                 if setting_name == 'columns':
-                    data.columns = [int(value.split(',')[i]) for i in range(3)]
+                    data.columns = [int(s) for s in value.split(',')]
                     data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
                     self.update_plots()
                     self.show_current_all()            
                 elif setting_name == 'delimiter':
                     data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
                     self.update_plots()
-                    self.show_current_all() 
-                elif setting_name == '2D':
-                    self.paste_plot_settings(which='old')
+                    self.show_current_all()
                 elif setting_name == 'rc-filter':
                     data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
                     self.update_plots()
@@ -875,7 +897,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     dpi = 'figure'
                 self.figure.savefig(filename, dpi=dpi,
                                     transparent=data.settings['transparent']=='True',
-                                    frameon=data.settings['frameon']=='True', bbox_inches='tight')
+                                    bbox_inches='tight')
                 print('Saved!')
                 
     def save_filters(self):
@@ -926,7 +948,57 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         'View Settings': data.view_settings, 'Raw Data': data.raw_data}
                     dictionary_list.append(item_dictionary)
             np.save(filename, dictionary_list)
-                
+    
+    def open_files_from_folder(self):			
+        if PRINT_FUNCTION_CALLS:
+            print('open_files_from_folder')   
+        self.file_list.itemChanged.disconnect(self.file_checked)
+        rootdir = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
+        filepaths = []
+        for subdir, dirs, files in os.walk(rootdir):
+            for file in files:
+                filename, file_extension = os.path.splitext(file)
+                if file_extension == '.dat':
+                    filepath = os.path.join(subdir, file)
+                    filepaths.append((os.stat(filepath)[ST_CTIME],filepath))
+        filepaths.sort(key=lambda tup: tup[0])
+        for creation_time, filepath in filepaths:
+            print(filepath, creation_time)
+            self.add_file(filepath)
+        last_item = self.file_list.item(self.file_list.count()-1)
+        self.file_list.setCurrentItem(last_item)
+        for item_index in range(self.file_list.count()-1):
+            self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+        self.show_current_all()
+        self.file_list.itemChanged.connect(self.file_checked)
+        last_item.setCheckState(QtCore.Qt.Checked)
+    
+    def save_files_as(self, extension):
+        if PRINT_FUNCTION_CALLS:
+            print('save_files_as')
+        save_directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
+        items = [self.file_list.item(n) for n in range(self.file_list.count())]
+        for item in items:
+            try:
+                self.file_list.itemChanged.disconnect(self.file_checked)
+                for item_index in range(self.file_list.count()):
+                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+                item.setCheckState(QtCore.Qt.Checked)
+                self.file_list.itemChanged.connect(self.file_checked)
+                self.update_plots()
+                data = item.data(QtCore.Qt.UserRole)
+                filename = os.path.join(save_directory, os.path.basename(os.path.dirname(data.filepath)) + extension)#data.meta_data_name + extension)
+                print('Save Figure as '+filename)
+                try:
+                    dpi = int(data.settings['dpi'])
+                except:
+                    dpi = 'figure'
+                self.figure.savefig(filename, dpi=dpi, 
+                                    transparent=data.settings['transparent']=='True', bbox_inches='tight')
+                print('Saved!')
+            except:
+                print('Could not save file...')
+        
     def mouse_click_canvas(self, event):
         if PRINT_FUNCTION_CALLS:
             print('mouse_click_canvas')
@@ -939,9 +1011,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 if self.plot_in_focus:
                     plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
                     data = plot_data.processed_data
-                    index_x = np.argmin(np.absolute(data[0][:,0]-x))
-                    index_y = np.argmin(np.absolute(data[1][0,:]-y))
-                    if (event.button == 1 or event.button == 2) and plot_data.settings['2D'] == 'False':
+                    if (event.button == 1 or event.button == 2) and len(plot_data.columns) == 3:
+                        index_x = np.argmin(np.abs(data[0][:,0]-x))
+                        index_y = np.argmin(np.abs(data[1][0,:]-y))
                         plot_data.selected_indices = [int(index_x), int(index_y)]
                         if event.button == 1:
                             if PRINT_FUNCTION_CALLS:
@@ -963,7 +1035,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         if PRINT_FUNCTION_CALLS:
                             print('rightmouseclickplot')
                         menu = QtWidgets.QMenu(self)
-                        if plot_data.settings['2D'] == 'False':
+                        if len(plot_data.columns) == 3:
+                            index_x = np.argmin(np.abs(data[0][:,0]-x))
+                            index_y = np.argmin(np.abs(data[1][0,:]-y))
                             z_value = data[2][index_x,index_y]
                             coordinates = 'x = %.4g, y = %.4g, z = %.4g (%d, %d)' % (x, y, z_value, index_x, index_y)
                             action = QtWidgets.QAction(coordinates, self)
@@ -972,7 +1046,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             menu.addSeparator()
                         if plot_data.channels:
                             channel_menu = menu.addMenu('Change channel to...')
-                            for channel in plot_data.channels[2-(plot_data.settings['2D']=='True'):]:
+                            for channel in plot_data.channels[len(plot_data.columns)-1:]:
                                 action = QtWidgets.QAction(channel, self)
                                 channel_menu.addAction(action)
                         try:
@@ -986,7 +1060,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                 else:
                                     action = QtWidgets.QAction('Enable RC-filter correction...', self)
                                 menu.addAction(action)
-                        if plot_data.settings['2D'] == 'False':
+                        if len(plot_data.columns) == 3:
                             if plot_data.cropping:
                                 action = QtWidgets.QAction('Crop x to...', self)
                                 menu.addAction(action)
@@ -1019,7 +1093,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                        'FFT vertical...',
                                        'FFT horizontal...',
                                        'Copy canvas to clipboard...']
-                        elif plot_data.settings['2D'] == 'True':
+                        elif len(plot_data.columns) == 2:
                             entries = ['Refresh plot...',
                                        'Copy canvas to clipboard...']
                         for entry in entries:
@@ -1148,12 +1222,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         elif signal.text() in plot_data.channels:
             channel_index = plot_data.channels.index(signal.text())
             plot_data.settings['columns'] = plot_data.settings['columns'][:-1]+str(channel_index)
-            if plot_data.settings['2D'] == 'True':
-                plot_data.columns[1] = channel_index
-                plot_data.settings['ylabel'] = plot_data.channels[plot_data.columns[1]]
+            plot_data.columns[-1] = channel_index
+            if len(plot_data.columns) == 2:
+                plot_data.settings['ylabel'] = signal.text()
             else:                
-                plot_data.columns[2] = channel_index
-                plot_data.settings['clabel'] = plot_data.channels[plot_data.columns[2]]
+                plot_data.settings['clabel'] = signal.text()
             plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
             self.update_plots()
             self.show_current_all()
@@ -1176,7 +1249,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
             if self.plot_in_focus:
                 data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
-                if data.settings['2D'] == 'False':
+                if len(data.columns) == 3:
                     try:
                         data.linecut_window
                     except AttributeError:
@@ -1281,7 +1354,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('Cannot merge these files...')
 
     
-class Data3D:
+class Data:
     def __init__(self, filepath, existing_data=None):
         self.filepath = filepath
         self.filename = os.path.basename(filepath)
@@ -1291,12 +1364,12 @@ class Data3D:
                 'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
                 'columns': DEFAULT_COLUMNS, 'colorbar': 'True', 'minorticks': 'False', 
                 'delimiter': '', 'mask color': 'white', 'lut': '512', 'rasterized': 'True', 'dpi': '300', 
-                'transparent': 'False', 'frameon': 'False', '2D': 'False', 'rc-filter': ''}
+                'transparent': 'False', 'rc-filter': ''}
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
         self.settings = self.default_settings.copy()
         self.old_settings = self.default_settings.copy()
-        self.columns = [int(self.default_settings['columns'].split(',')[i]) for i in range(3)]
+        self.columns = [int(s) for s in self.default_settings['columns'].split(',')]
         if existing_data:
             self.from_npy_file = True
             self.raw_data = existing_data
@@ -1318,8 +1391,8 @@ class Data3D:
             self.meta_data_name = None
             self.rcfilter_correct = False
             self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
-        min_map = np.min(self.processed_data[2])
-        max_map = np.max(self.processed_data[2])
+        min_map = np.min(self.processed_data[-1])
+        max_map = np.max(self.processed_data[-1])
         mid_map = 0.5*(min_map+max_map)
         self.default_view_settings = {
                 'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
@@ -1349,19 +1422,21 @@ class Data3D:
         l1 = len(indices) 
         if len(column_data[np.sort(indices)[-1]::,0]) < l0:
             l1 = l1-1
-        if column_data[:,self.columns[0]][1] != column_data[:,self.columns[0]][0]: # if file is 2D
-            self.settings['2D'] = 'True'
-            xq, yq = np.meshgrid([-1.,0.,1.], column_data[:,self.columns[0]])
-            zq = np.array([column_data[:,self.columns[1]]]*3)
-            self.raw_data = [xq.transpose(), yq.transpose(), zq]
+        # check if subsequent column is also repeated (for combination gate sweeps e.g.)
+        if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
+            self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
+        if (column_data[1,self.columns[0]] != column_data[0,self.columns[0]]) or len(self.columns) == 2: # if file is 2D          
+            self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
+            if len(self.columns) == 3:
+                self.columns = self.columns[:-1]
         else:
-            self.settings['2D'] = 'False'
             if indices[1] > indices[0]:
                 self.raw_data = [np.reshape(column_data[:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
             else:
                 self.raw_data = [np.reshape(column_data[l0*l1-1::-1,x], (l1,l0)) for x in range(column_data.shape[1])]
             if self.raw_data[1][0,0] > self.raw_data[1][0,1]:
                 self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
+        self.settings['columns'] = ','.join([str(i) for i in self.columns])
 
     def interpret_meta_file(self):
         if PRINT_FUNCTION_CALLS:
@@ -1372,31 +1447,65 @@ class Data3D:
         self.channels = [channel['name'] for channel in self.meta_data['columns']]
         self.settings['xlabel'] = self.channels[self.columns[0]]
         self.settings['ylabel'] = self.channels[self.columns[1]]
-        self.settings['clabel'] = self.channels[self.columns[2]]
-        self.meta_data_name = self.meta_data['timestamp']+' '+self.meta_data['name']
+        if len(self.columns) == 3:
+            self.settings['clabel'] = self.channels[self.columns[2]]          
+        #self.meta_data_name = self.meta_data['timestamp']+' '+self.meta_data['name']
+        self.meta_data_name = (os.path.basename(os.path.dirname(self.filepath)) + ' ' +
+                               self.meta_data['timestamp'].split(' ')[1] + ' ' + self.meta_data['name'])
         if 'source' in self.channels and 'dc_curr' in self.channels:
             DEFAULT_RC_FILTER = 8240
             self.settings['rc-filter'] = str(DEFAULT_RC_FILTER)
         try:
             new_index = self.channels.index(DEFAULT_CHANNEL)
-            if self.settings['2D'] == 'False':
-                self.columns[2] = new_index
-                self.settings['columns'] = self.settings['columns'][:-1]+str(new_index)
-            else:
-                self.columns[1] = new_index
-                self.settings['columns'] = self.settings['columns'][:2]+str(new_index)+self.settings['columns'][3:]
+            self.columns[-1] = new_index
+            self.settings['columns'] = self.settings['columns'][:-1]+str(new_index)
         except:
             print('Default channel',DEFAULT_CHANNEL,'not found...')
         if DEFAULT_SHOW_METADATANAME:
             self.settings['title'] = '<metadataname>'
+        self.settings_string = ''
+        if SHOW_SETTINGS_ON_CANVAS:
+            channels_to_show = ['source', 'g1', 'g2', 'g3', 'g4', 'g4f', 'g5', 'g6', 'g6f', 'bg', 'Bx', 'Bz', 'T']
+            meta_channels = self.meta_data['setup']['channels']
+            for instrument in self.meta_data['register']['instruments']:
+                if instrument['name'] == 'dac':
+                    dac = instrument
+                    break
+            for channel in channels_to_show:
+                try:
+                    if channel in meta_channels:
+                        for dac_channel in self.meta_data['register']['channels']:
+                            if dac_channel['name'] == channel: 
+                                if dac_channel['instrument'] == 'dac':  
+                                    value = dac['current_values'][dac_channel['channel_id']]
+                                    self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                    break
+                                elif dac_channel['instrument'] == 'smua' or dac_channel['instrument'] == 'smub':
+                                    pass # TODO to be added in meta files
+                        else:
+                            if channel == 'Bx' or channel == 'Bz':
+                                for instrument in self.meta_data['register']['instruments']:
+                                    if instrument['name'] == 'magnet':
+                                        value = instrument['field'][channel[1:]]
+                                        self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                        break
+                    elif channel == 'T':
+                        for instrument in self.meta_data['register']['instruments']:
+                            if instrument['name'] == 'triton':
+                                value = instrument['temperatures']['MC']*1000
+                                self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                break
+                except:
+                    print('Could not add channel',channel,'...')
     
     def correct_for_rcfilters(self):
         if PRINT_FUNCTION_CALLS:
             print('correct_for_rcfilters')
         if 'source' in self.channels and 'dc_curr' in self.channels:
             source_index = self.channels.index('source')
-            if source_index in self.columns[:3-(self.settings['2D']=='True')]:
-                print('Correcting source for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
+            if source_index in self.columns:
+                if PRINT_FUNCTION_CALLS:
+                    print('Correcting source for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
                 source_divider = self.meta_data['setup']['meta']['source_divider']
                 curr_index = self.channels.index('dc_curr')                    
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
@@ -1407,8 +1516,9 @@ class Data3D:
         
         if 'lockin_curr/X' in self.channels:
             lockin_index = self.channels.index('lockin_curr/X')
-            if lockin_index in self.columns[:3-(self.settings['2D']=='True')]:
-                print('Correcting lockin_curr/X for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
+            if lockin_index in self.columns:
+                if PRINT_FUNCTION_CALLS:
+                    print('Correcting lockin_curr/X for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
                 for instrument in self.meta_data['register']['instruments']:
                     if instrument['name'] == 'lockin_curr':
                         break
@@ -1423,9 +1533,14 @@ class Data3D:
     def meta_unit_conversion(self):
         if PRINT_FUNCTION_CALLS:
             print('meta_unit_conversion')
-         
-        bound_from = self.meta_data['job']['from']
-        bound_to = self.meta_data['job']['to']
+        
+        try:
+            bound_from = self.meta_data['job']['from']
+            bound_to = self.meta_data['job']['to']
+        except KeyError:
+            bound_from = self.meta_data['job']['job']['from']
+            bound_to = self.meta_data['job']['job']['to']
+            
         if isinstance(bound_from, list):
             if self.channels[self.columns[0]] in self.meta_data['job']['chans']:
                 bound_from = bound_from[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
@@ -1433,19 +1548,20 @@ class Data3D:
         
         if 'source' in self.channels:
             source_index = self.channels.index('source')
-            if source_index in self.columns[:3-(self.settings['2D']=='True')]:
+            if source_index in self.columns:
                 source_divider = self.meta_data['setup']['meta']['source_divider']
                 SOURCE_UNIT = 1e-3 # Convert V to mV  
-                print('Converting source units to millivolts...')
+                if PRINT_FUNCTION_CALLS:
+                    print('Converting source units to millivolts...')
                 if source_divider*SOURCE_UNIT != 1.0:
                     divide = '%.3g' % (source_divider*SOURCE_UNIT)
-                    axis = ['X','Y','Z'][self.columns.index(source_index)+(self.settings['2D']=='True')] 
+                    axis = ['X','Y','Z'][self.columns.index(source_index)] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(source_index) == 1:
-                    self.settings['ylabel'] = 'Bias Voltage (mV)'
-                elif self.columns.index(source_index) == 0:
+                if self.columns.index(source_index) == 0:
                     self.settings['xlabel'] = 'Bias Voltage (mV)'
+                elif self.columns.index(source_index) == 1:
+                    self.settings['ylabel'] = 'Bias Voltage (mV)'
                 if source_index == 0:
                     self.measurement_bounds = [bound_from/(source_divider*SOURCE_UNIT),
                                                bound_to/(source_divider*SOURCE_UNIT)]
@@ -1453,23 +1569,21 @@ class Data3D:
         fine_gates = [channel for channel in self.channels if channel[0] == 'g' and channel[-1] == 'f']
         for gate in fine_gates:
             gate_index = self.channels.index(gate)
-            if gate_index in self.columns[:3-(self.settings['2D']=='True')]:                              
-                print('Converting '+gate+' units to volts...')
+            if gate_index in self.columns:                              
+                if PRINT_FUNCTION_CALLS:
+                    print('Converting '+gate+' units to volts...')
                 DAC_FINE_DIVIDER = 200
                 DAC_FINE_OFFSET = 0.05
                 divide = '%.3g' % DAC_FINE_DIVIDER
-                gate_axis = ['X','Y','Z'][self.columns.index(gate_index)+(self.settings['2D']=='True')] 
+                gate_axis = ['X','Y','Z'][self.columns.index(gate_index)] 
                 self.filters.append({'Name': 'Divide', 'Method': gate_axis, 
                                      'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
                 if DAC_FINE_OFFSET != 0.0:
                     fine_offset = '%.3g' % DAC_FINE_OFFSET
                     self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
-                                         'Setting 1': fine_offset, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate Voltage '+gate[1:]+' (V)'
-                elif self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate Voltage '+gate[1:]+' (V)'
-                print('Adding coarse gate voltage...')
+                                         'Setting 1': fine_offset, 'Setting 2': '', 'Checked': 2})                    
+                if PRINT_FUNCTION_CALLS:
+                    print('Adding coarse gate voltage...')
                 coarse_gate = gate[:-1]
                 for instrument in self.meta_data['register']['instruments']:
                     if instrument['name'] == 'dac':
@@ -1483,6 +1597,10 @@ class Data3D:
                 coarse_offset = '%.3g' % coarse_offset_dac
                 self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
                                      'Setting 1': coarse_offset, 'Setting 2': '', 'Checked': 2})
+                if self.columns.index(gate_index) == 0:
+                    self.settings['xlabel'] = 'Gate Voltage '+gate[1:]+' (V)'
+                elif self.columns.index(gate_index) == 1:
+                    self.settings['ylabel'] = 'Gate Voltage '+gate[1:]+' (V)'
                 if gate_index == 0:   
                     self.measurement_bounds = [bound_from/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac,
                                                bound_to/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac]
@@ -1490,33 +1608,36 @@ class Data3D:
         coarse_gates = [channel for channel in self.channels if channel[0] == 'g' and len(channel) == 2]
         for gate in coarse_gates:
             gate_index = self.channels.index(gate)
-            if gate_index in self.columns[:3-(self.settings['2D']=='True')]:
-                if self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate Voltage '+gate[1]+' (V)'
-                elif self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate Voltage '+gate[1]+' (V)'  
-            if gate_index == 0:   
-                self.measurement_bounds = [bound_from, bound_to]
+            if gate_index in self.columns:
+                if self.columns.index(gate_index) == 0:
+                    self.settings['xlabel'] = 'Gate Voltage '+gate[1]+' (V)'
+                elif self.columns.index(gate_index) == 1:
+                    self.settings['ylabel'] = 'Gate Voltage '+gate[1]+' (V)'  
+                if gate_index == 0:   
+                    self.measurement_bounds = [bound_from, bound_to]
             
         if 'dc_curr' in self.channels:
             curr_index = self.channels.index('dc_curr')
-            if curr_index in self.columns[:3-(self.settings['2D']=='True')]:
+            if curr_index in self.columns:
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
-                print('Converting dc_curr units to nano-amperes...')
+                if PRINT_FUNCTION_CALLS:
+                    print('Converting dc_curr units to nano-amperes...')
                 CURR_UNIT = 1e-9 # Ampere to nano-ampere
                 if curr_amp*CURR_UNIT != 1.0:
                     divide = '%.3g' % (curr_amp*CURR_UNIT)
-                    axis = ['X','Y','Z'][self.columns.index(curr_index)+(self.settings['2D']=='True')] 
+                    axis = ['X','Y','Z'][self.columns.index(curr_index)] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(curr_index) == 2:
-                    self.settings['clabel'] = 'DC Current (nA)'
-                elif self.settings['2D'] == 'True' and self.columns.index(curr_index) == 1:
+                if self.columns.index(curr_index) == 0:
+                    self.settings['xlabel'] = 'DC Current (nA)'
+                elif self.columns.index(curr_index) == 1:
                     self.settings['ylabel'] = 'DC Current (nA)'
+                elif self.columns.index(curr_index) == 2:
+                    self.settings['clabel'] = 'DC Current (nA)'
         
         if 'lockin_curr/X' in self.channels:
             lockin_index = self.channels.index('lockin_curr/X')
-            if lockin_index in self.columns[:3-(self.settings['2D']=='True')]:
+            if lockin_index in self.columns:
                 for instrument in self.meta_data['register']['instruments']:
                     if instrument['name'] == 'lockin_curr':
                         break
@@ -1524,29 +1645,32 @@ class Data3D:
                 lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
                 
-                print('Correcting lockin_curr/X units to microsiemens...')
+                if PRINT_FUNCTION_CALLS:
+                    print('Correcting lockin_curr/X units to microsiemens...')
                 LOCKIN_UNIT = 1e-6 # Siemens to microsiemens
                 conversion_factor = curr_amp*sine_amplitude/lockin_divider*LOCKIN_UNIT
                 if conversion_factor != 1.0:
                     divide = '%.3g' % conversion_factor
-                    axis = ['X','Y','Z'][self.columns.index(lockin_index)+(self.settings['2D']=='True')] 
+                    axis = ['X','Y','Z'][self.columns.index(lockin_index)] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
                 if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
                     multiply_e2h = '%.6g' % 0.0258128
-                    axis = ['X','Y','Z'][self.columns.index(lockin_index)+(self.settings['2D']=='True')] 
+                    axis = ['X','Y','Z'][self.columns.index(lockin_index)] 
                     self.filters.append({'Name': 'Multiply', 'Method': axis, 
                                          'Setting 1': multiply_e2h, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(lockin_index) == 2:
+                
+                if self.columns.index(lockin_index) == 1:
+                    if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
+                        self.settings['ylabel'] = 'd$I$/d$V$ ($e^2/h$)'
+                    else:
+                        self.settings['ylabel'] = 'd$I$/d$V$ ($\mu$S)'
+                elif self.columns.index(lockin_index) == 2:
                     if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
                         self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
                     else:
                         self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
-                elif self.settings['2D'] == 'True' and self.columns.index(lockin_index) == 1:
-                    if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
-                        self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
-                    else:
-                        self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
+
         
         if 'Bx' in self.channels:
             if self.channels.index('Bx') == 0:  
@@ -1588,8 +1712,10 @@ class Data3D:
             self.axes.set_xlim(left=min(self.measurement_bounds), 
                                right=max(self.measurement_bounds))
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
+        if SHOW_SETTINGS_ON_CANVAS:
+            self.axes.text(1.2, 0.4, self.settings_string, fontsize=14, transform=self.axes.transAxes)
         self.apply_plot_settings()
-      
+
     def add_plot_2d(self):
         if PRINT_FUNCTION_CALLS:
             print('add_plot_2d')
@@ -1597,18 +1723,20 @@ class Data3D:
         cmap = self.view_settings['Color Map']
         if self.view_settings['Reverse']:
             cmap = cmap+'_r'
-        self.image = self.axes.plot(data[1][0,:], data[2][0,:], color=cm.get_cmap(cmap)(0.5))
+        self.image = self.axes.plot(data[0], data[1], color=cm.get_cmap(cmap)(0.5))
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
+        if SHOW_SETTINGS_ON_CANVAS:
+            self.axes.text(1.02, 0.4, self.settings_string, fontsize=14, transform=self.axes.transAxes)
         self.apply_plot_settings()        
         
     def reset_view_settings(self, overrule=False):
         if PRINT_FUNCTION_CALLS:
             print('reset_view_settings')
         if self.view_settings['Locked'] == 0 or overrule == True:
-            self.view_settings['Minimum'] = np.min(self.processed_data[2])
-            self.view_settings['Maximum'] = np.max(self.processed_data[2])
-            self.view_settings['Midpoint'] = 0.5*(np.min(self.processed_data[2])+
-                             np.max(self.processed_data[2]))
+            self.view_settings['Minimum'] = np.min(self.processed_data[-1])
+            self.view_settings['Maximum'] = np.max(self.processed_data[-1])
+            self.view_settings['Midpoint'] = 0.5*(np.min(self.processed_data[-1])+
+                             np.max(self.processed_data[-1]))
             self.view_settings['Norm'] = MidpointNormalize(
                     vmin=self.view_settings['Minimum'], 
                     vmax=self.view_settings['Maximum'], 
@@ -1656,15 +1784,17 @@ class Data3D:
             self.axes.set_title("\n".join(wrap(self.meta_data_name,80)), size=settings['titlesize'])
         else:
             self.axes.set_title(settings['title'], size=settings['titlesize'])
-        if settings['colorbar'] == 'True' and settings['2D'] == 'False':
+        if settings['colorbar'] == 'True' and len(self.columns) == 3:
             self.cbar.ax.set_title(settings['clabel'], size=settings['labelsize'])
             self.cbar.ax.tick_params(labelsize=settings['ticksize'])
+#        if True:
+#            self.figure.tight_layout(pad=6)
             
 
     def apply_view_settings(self):
         if PRINT_FUNCTION_CALLS:
             print('apply_view_settings')
-        if self.settings['2D'] == 'False':
+        if len(self.columns) == 3:
             self.view_settings['Norm'] = MidpointNormalize(
                     vmin=self.view_settings['Minimum'], 
                     vmax=self.view_settings['Maximum'], 
@@ -1684,7 +1814,7 @@ class Data3D:
             cmap_str = cmap_str+'_r'
         cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
         cmap.set_bad(self.settings['mask color'])
-        if self.settings['2D'] == 'False':
+        if len(self.columns) == 3:
             self.image.set_cmap(cmap)
         else:
             self.image[0].set_color(cmap(0.5))
@@ -1787,9 +1917,9 @@ class Data3D:
         if PRINT_FUNCTION_CALLS:
             print('open_fft_window')
         if self.fft_orientation == 'vertical':
-            self.fft = np.fft.rfft(self.processed_data[2], axis=1)
+            self.fft = np.fft.rfft(self.processed_data[-1], axis=1)
         elif self.fft_orientation == 'horizontal':
-            self.fft = np.fft.rfft(self.processed_data[2], axis=0)
+            self.fft = np.fft.rfft(self.processed_data[-1], axis=0)
         self.fft_window = FFTWindow(self.fft)
         self.fft_window.show()
 
