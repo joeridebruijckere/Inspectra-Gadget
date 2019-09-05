@@ -20,6 +20,8 @@ from matplotlib.colors import Normalize, LogNorm, ListedColormap
 from matplotlib import cm
 from matplotlib.widgets import Cursor
 from matplotlib import rcParams
+from matplotlib.lines import Line2D
+import matplotlib.patches as patches
 from textwrap import wrap
 import design
 import filters
@@ -256,7 +258,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             self.add_file(session_item['File Name'], data=session_item['Raw Data'])
                             item = self.file_list.item(self.file_list.count()-1)
                             data = item.data(QtCore.Qt.UserRole)
-                            data.settings = session_item['Settings']
+                            data.settings = data.default_settings.copy()
+                            for setting, value in session_item['Settings'].items():
+                                if setting in data.settings:
+                                    data.settings[setting] = value
                             data.filters = session_item['Filters']
                             data.view_settings = session_item['View Settings']
                             data.apply_all_filters(update_color_limits=False)
@@ -1011,7 +1016,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 if self.plot_in_focus:
                     plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
                     data = plot_data.processed_data
-                    if (event.button == 1 or event.button == 2) and len(plot_data.columns) == 3:
+                    if (event.button == 1 or event.button == 2) and len(plot_data.columns) == 3 and not plot_data.list_points:
                         index_x = np.argmin(np.abs(data[0][:,0]-x))
                         index_y = np.argmin(np.abs(data[1][0,:]-y))
                         plot_data.selected_indices = [int(index_x), int(index_y)]
@@ -1075,10 +1080,12 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             menu.addAction(action)
                             if plot_data.drawing_diagonal_linecut:
                                 action = QtWidgets.QAction('Diagonal linecut to...', self)
-                                plot_data.linecut_to = [int(index_x), int(index_y)]
+                                plot_data.linecut_index_to = [int(index_x), int(index_y)]
+                                plot_data.linecut_to = [x, y]
                             else:
                                 action = QtWidgets.QAction('Diagonal linecut from...', self)
-                                plot_data.linecut_from = [int(index_x), int(index_y)]
+                                plot_data.linecut_index_from = [int(index_x), int(index_y)]
+                                plot_data.linecut_from = [x, y]
                             menu.addAction(action)
                             if plot_data.measurement_bounds:
                                 if plot_data.draw_full_range:
@@ -1131,13 +1138,18 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print(signal.text())
         plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
         if signal.text() == 'Hide linecuts...':
-            try:
-                plot_data.linecut.remove()
-                del plot_data.linecut
-                plot_data.linecut_window.running = False
-                self.canvas.draw()
-            except:
-                pass
+            plot_data.linecut_window.running = False         
+            for line in plot_data.axes.get_lines():
+                line.remove()
+                del line
+            for patch in plot_data.axes.patches:
+                patch.remove()
+                del patch
+            for patch in plot_data.axes.patches:
+                patch.remove()
+                del patch
+            plot_data.list_points = []
+            self.canvas.draw()
         elif signal.text() == 'Refresh plot...':
             plot_data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
             self.update_plots()
@@ -1189,10 +1201,24 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.canvas.draw()
             plot_data.cropping = False
         elif signal.text() == 'Diagonal linecut from...':
+            if plot_data.list_points:
+                for line in plot_data.axes.get_lines():
+                    line.remove()
+                    del line
+                for patch in plot_data.axes.patches:
+                    patch.remove()
+                    del patch
+                for patch in plot_data.axes.patches:
+                    patch.remove()
+                    del patch
+                plot_data.list_points = []
             x1, y1 = plot_data.linecut_from
             plot_data.drawing_diagonal_linecut = True
+            plot_data.list_points.append(DraggablePoint(plot_data, x1, y1))
             self.canvas.draw()
         elif signal.text() == 'Diagonal linecut to...':
+            x1, y1 = plot_data.linecut_to
+            plot_data.list_points.append(DraggablePoint(plot_data, x1, y1))
             plot_data.orientation = 'diagonal'
             try:
                 plot_data.linecut_window
@@ -1219,17 +1245,18 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         elif signal.text() == 'FFT horizontal...':
             plot_data.fft_orientation = 'horizontal'
             plot_data.open_fft_window()
-        elif signal.text() in plot_data.channels:
-            channel_index = plot_data.channels.index(signal.text())
-            plot_data.settings['columns'] = plot_data.settings['columns'][:-1]+str(channel_index)
-            plot_data.columns[-1] = channel_index
-            if len(plot_data.columns) == 2:
-                plot_data.settings['ylabel'] = signal.text()
-            else:                
-                plot_data.settings['clabel'] = signal.text()
-            plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
-            self.update_plots()
-            self.show_current_all()
+        elif plot_data.channels: 
+            if signal.text() in plot_data.channels:
+                channel_index = plot_data.channels.index(signal.text())
+                plot_data.settings['columns'] = plot_data.settings['columns'][:-1]+str(channel_index)
+                plot_data.columns[-1] = channel_index
+                if len(plot_data.columns) == 2:
+                    plot_data.settings['ylabel'] = signal.text()
+                else:                
+                    plot_data.settings['clabel'] = signal.text()
+                plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
+                self.update_plots()
+                self.show_current_all()
         elif signal.text() == 'Copy canvas to clipboard...':
             del plot_data.cursor
             self.canvas.draw()
@@ -1408,7 +1435,8 @@ class Data:
         self.orientation = None
         self.multi_orientation = None
         self.cropping = False
-        self.drawing_diagonal_linecut = False        
+        self.drawing_diagonal_linecut = False
+        self.list_points = []        
         
     def load_data_from_file(self, filepath):
         if PRINT_FUNCTION_CALLS:
@@ -1881,18 +1909,22 @@ class Data:
                 self.linecut = self.axes.axvline(
                         x=value, linestyle='dashed', linewidth=0.5, color='k')
             elif self.orientation == 'diagonal':
-                i_x0, i_y0 = self.linecut_from
-                i_x1, i_y1 = self.linecut_to
+                x0, y0 = self.list_points[0].x, self.list_points[0].y
+                x1, y1 = self.list_points[1].x, self.list_points[1].y
+                
+                i_x0 = np.argmin(np.abs(x0-self.processed_data[0][:,0]))
+                i_y0 = np.argmin(np.abs(y0-self.processed_data[1][0,:]))
+                i_x1 = np.argmin(np.abs(x1-self.processed_data[0][:,0]))
+                i_y1 = np.argmin(np.abs(y1-self.processed_data[1][0,:]))
+
                 n = 200
                 x_diag, y_diag = np.linspace(i_x0, i_x1, n), np.linspace(i_y0, i_y1, n)
-                y = map_coordinates(self.processed_data[2], np.vstack((x_diag, y_diag)))
-                x = np.linspace(0, 1, n)
-                self.linecut_window.xlabel = ''
+                y = map_coordinates(self.processed_data[-1], np.vstack((x_diag, y_diag)))
+                x = map_coordinates(self.processed_data[0], np.vstack((x_diag, y_diag)))                
+                self.linecut_window.xlabel = self.settings['xlabel']
                 self.linecut_window.zlabel = ''
                 self.linecut_window.title = ''
-                self.linecut = self.axes.plot([self.processed_data[0][i_x0,0], self.processed_data[0][i_x1,0]],
-                                              [self.processed_data[1][0,i_y0], self.processed_data[1][0,i_y1]],
-                                              linestyle='dashed', linewidth=0.5, color='k')[0]
+
             self.linecut_window.ylabel = self.settings['clabel']
             self.linecut_window.draw_plot(x, y)
             self.linecut_window.show()
@@ -2265,6 +2297,153 @@ class NavigationToolbarMod(NavigationToolbar):
         ('Pan', 'Pan axes with left mouse, zoom with right', 'move', 'pan'),
         ('Zoom', 'Zoom to rectangle', 'zoom_to_rect', 'zoom'),
         ('Subplots', 'Configure subplots', 'subplots', 'configure_subplots'))
+  
+
+class DraggablePoint:
+
+    lock = None #  only one can be animated at a time
+
+    def __init__(self, parent, x, y):
+
+        self.parent = parent
+        self.axes = parent.axes
+        
+        x0, x1 = self.axes.get_xlim()
+        y0, y1 = self.axes.get_ylim()
+        
+        self.point = patches.Ellipse((x, y), (x1-x0)*0.05, (y1-y0)*0.05, fc='k', alpha=0, edgecolor='k')
+        self.x = x
+        self.y = y
+        self.axes.add_patch(self.point)
+        self.press = None
+        self.background = None
+        self.connect()
+
+        if self.parent.list_points:
+            line_x = [self.parent.list_points[0].x, self.x]
+            line_y = [self.parent.list_points[0].y, self.y]
+
+            self.line = Line2D(line_x, line_y, color='k', alpha=0.5)
+            self.axes.add_line(self.line)
+
+
+    def connect(self):
+
+        'connect to all the events we need'
+
+        self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
+        self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
+        self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
+
+
+    def on_press(self, event):
+        
+        if event.inaxes != self.point.axes: return
+        if DraggablePoint.lock is not None: return
+        contains, attrd = self.point.contains(event)
+        if not contains: return
+        self.press = (self.point.center), event.xdata, event.ydata
+        DraggablePoint.lock = self
+
+        # draw everything but the selected rectangle and store the pixel buffer
+        canvas = self.point.figure.canvas
+        axes = self.point.axes
+        self.point.set_animated(True)
+        if len(self.parent.list_points) > 1:
+            if self == self.parent.list_points[1]:
+                self.line.set_animated(True)
+            else:
+                self.parent.list_points[1].line.set_animated(True)
+        canvas.draw()
+        self.background = canvas.copy_from_bbox(self.point.axes.bbox)
+
+        # now redraw just the rectangle
+        axes.draw_artist(self.point)
+
+        # and blit just the redrawn area
+        canvas.blit(axes.bbox)
+
+
+    def on_motion(self, event):
+
+        if DraggablePoint.lock is not self:
+            return
+        if event.inaxes != self.point.axes: return
+        self.point.center, xpress, ypress = self.press
+        dx = event.xdata - xpress
+        dy = event.ydata - ypress
+        self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
+
+        canvas = self.point.figure.canvas
+        axes = self.point.axes
+        # restore the background region
+        canvas.restore_region(self.background)
+
+        # redraw just the current rectangle
+        axes.draw_artist(self.point)
+
+        if len(self.parent.list_points) > 1:
+            if self == self.parent.list_points[1]:
+                axes.draw_artist(self.line)
+            else:
+                self.parent.list_points[1].line.set_animated(True)
+                axes.draw_artist(self.parent.list_points[1].line)
+
+        self.x = self.point.center[0]
+        self.y = self.point.center[1]
+
+        if len(self.parent.list_points) > 1:
+            if self == self.parent.list_points[1]:
+                line_x = [self.parent.list_points[0].x, self.x]
+                line_y = [self.parent.list_points[0].y, self.y]
+                self.line.set_data(line_x, line_y)
+            else:
+                line_x = [self.x, self.parent.list_points[1].x]
+                line_y = [self.y, self.parent.list_points[1].y]
+    
+                self.parent.list_points[1].line.set_data(line_x, line_y)
+
+        # blit just the redrawn area
+        canvas.blit(axes.bbox)
+
+
+    def on_release(self, event):
+
+        'on release we reset the press data'
+        if DraggablePoint.lock is not self:
+            return
+
+        self.press = None
+        DraggablePoint.lock = None
+
+        # turn off the rect animation property and reset the background
+        self.point.set_animated(False)
+        if len(self.parent.list_points) > 1:
+            if self == self.parent.list_points[1]:
+                self.line.set_animated(False)
+            else:
+                self.parent.list_points[1].line.set_animated(False)
+
+        self.background = None
+
+        # redraw the full figure
+        self.point.figure.canvas.draw()
+
+        self.x = self.point.center[0]
+        self.y = self.point.center[1]
+        
+        if len(self.parent.list_points) > 1:
+            self.parent.update_linecut()
+            self.parent.linecut_window.activateWindow()
+
+    def disconnect(self):
+
+        'disconnect all the stored connection ids'
+
+        self.point.figure.canvas.mpl_disconnect(self.cidpress)
+        self.point.figure.canvas.mpl_disconnect(self.cidrelease)
+        self.point.figure.canvas.mpl_disconnect(self.cidmotion)
+
     
 def main():
     app = QtWidgets.QApplication(sys.argv)
