@@ -1917,7 +1917,7 @@ class Data:
                 i_x1 = np.argmin(np.abs(x1-self.processed_data[0][:,0]))
                 i_y1 = np.argmin(np.abs(y1-self.processed_data[1][0,:]))
 
-                n = 200
+                n = int(np.sqrt((i_x1-i_x0)**2+(i_y1-i_y0)**2))
                 x_diag, y_diag = np.linspace(i_x0, i_x1, n), np.linspace(i_y0, i_y1, n)
                 y = map_coordinates(self.processed_data[-1], np.vstack((x_diag, y_diag)))
                 x = map_coordinates(self.processed_data[0], np.vstack((x_diag, y_diag)))                
@@ -2311,7 +2311,7 @@ class DraggablePoint:
         x0, x1 = self.axes.get_xlim()
         y0, y1 = self.axes.get_ylim()
         
-        self.point = patches.Ellipse((x, y), (x1-x0)*0.05, (y1-y0)*0.05, fc='k', alpha=0, edgecolor='k')
+        self.point = patches.Ellipse((x, y), (x1-x0)*0.05, (y1-y0)*0.05, fc='r', alpha=0, edgecolor='k')
         self.x = x
         self.y = y
         self.axes.add_patch(self.point)
@@ -2323,7 +2323,7 @@ class DraggablePoint:
             line_x = [self.parent.list_points[0].x, self.x]
             line_y = [self.parent.list_points[0].y, self.y]
 
-            self.line = Line2D(line_x, line_y, color='k', alpha=0.5)
+            self.line = Line2D(line_x, line_y, color='r', alpha=0.7)
             self.axes.add_line(self.line)
 
 
