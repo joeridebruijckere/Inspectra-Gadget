@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on Aug 28 2019
+Last updated on Sep 06 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -67,7 +67,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 'd$^2$I/d$V^2$ (a.u.)', '|d$^2$I/d$V^2$| (a.u.)'],
                 'titlesize': font_sizes, 'labelsize': font_sizes, 'ticksize': font_sizes,
                 'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3','1,2,4'],
-                'minorticks': ['True','False'], 'delimiter': ['',','], 'mask color': ['black','white'], 
+                'minorticks': ['True','False'], 'delimiter': ['',','], 
+                'line color': ['black', 'red', 'white', 'blue', 'green'],'mask color': ['black','white'], 
                 'lut': ['128','256','512','1024'], 'rasterized': ['False','True'], 
                 'dpi': ['figure'], 'transparent': ['True', 'False']}
         table = self.settings_table
@@ -532,6 +533,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
                     self.update_plots()
                     self.show_current_all()
+                elif setting_name == 'line color':
+                    for line in data.axes.get_lines():
+                        line.set_color(value)
+                    self.canvas.draw()
                 elif setting_name == 'mask color':
                     data.apply_colormap()
                     self.canvas.draw()
@@ -1263,7 +1268,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.clipboard = QtWidgets.QApplication.clipboard()
             self.pixmap_canvas = QtGui.QPixmap(self.canvas.grab())
             self.clipboard.setPixmap(self.pixmap_canvas)
-            plot_data.cursor = Cursor(plot_data.axes, useblit=True, color='grey', linewidth=0.5)
+            plot_data.cursor = Cursor(plot_data.axes, useblit=True, color=self.settings['line color'], linewidth=0.5)
             self.canvas.draw()
             
     def mouse_scroll_canvas(self, event):
@@ -1390,7 +1395,8 @@ class Data:
                 'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
                 'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
                 'columns': DEFAULT_COLUMNS, 'colorbar': 'True', 'minorticks': 'False', 
-                'delimiter': '', 'mask color': 'white', 'lut': '512', 'rasterized': 'True', 'dpi': '300', 
+                'delimiter': '', 'line color': 'black', 'mask color': 'white', 
+                'lut': '512', 'rasterized': 'True', 'dpi': '300', 
                 'transparent': 'False', 'rc-filter': ''}
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
@@ -1477,7 +1483,6 @@ class Data:
         self.settings['ylabel'] = self.channels[self.columns[1]]
         if len(self.columns) == 3:
             self.settings['clabel'] = self.channels[self.columns[2]]          
-        #self.meta_data_name = self.meta_data['timestamp']+' '+self.meta_data['name']
         self.meta_data_name = (os.path.basename(os.path.dirname(self.filepath)) + ' ' +
                                self.meta_data['timestamp'].split(' ')[1] + ' ' + self.meta_data['name'])
         if 'source' in self.channels and 'dc_curr' in self.channels:
@@ -1561,7 +1566,6 @@ class Data:
     def meta_unit_conversion(self):
         if PRINT_FUNCTION_CALLS:
             print('meta_unit_conversion')
-        
         try:
             bound_from = self.meta_data['job']['from']
             bound_to = self.meta_data['job']['to']
@@ -1739,7 +1743,7 @@ class Data:
         if self.draw_full_range:        
             self.axes.set_xlim(left=min(self.measurement_bounds), 
                                right=max(self.measurement_bounds))
-        self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
+        self.cursor = Cursor(self.axes, useblit=True, color=self.settings['line color'], linewidth=0.5)
         if SHOW_SETTINGS_ON_CANVAS:
             self.axes.text(1.2, 0.4, self.settings_string, fontsize=14, transform=self.axes.transAxes)
         self.apply_plot_settings()
@@ -1752,7 +1756,7 @@ class Data:
         if self.view_settings['Reverse']:
             cmap = cmap+'_r'
         self.image = self.axes.plot(data[0], data[1], color=cm.get_cmap(cmap)(0.5))
-        self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
+        self.cursor = Cursor(self.axes, useblit=True, color=self.settings['line color'], linewidth=0.5)
         if SHOW_SETTINGS_ON_CANVAS:
             self.axes.text(1.02, 0.4, self.settings_string, fontsize=14, transform=self.axes.transAxes)
         self.apply_plot_settings()        
@@ -1814,10 +1818,7 @@ class Data:
             self.axes.set_title(settings['title'], size=settings['titlesize'])
         if settings['colorbar'] == 'True' and len(self.columns) == 3:
             self.cbar.ax.set_title(settings['clabel'], size=settings['labelsize'])
-            self.cbar.ax.tick_params(labelsize=settings['ticksize'])
-#        if True:
-#            self.figure.tight_layout(pad=6)
-            
+            self.cbar.ax.tick_params(labelsize=settings['ticksize'])            
 
     def apply_view_settings(self):
         if PRINT_FUNCTION_CALLS:
@@ -1847,7 +1848,6 @@ class Data:
         else:
             self.image[0].set_color(cmap(0.5))
             
-    
     def apply_filter(self, filter_settings, update_color_limits=True):
         if PRINT_FUNCTION_CALLS:
             print('apply_filter')
@@ -1898,7 +1898,7 @@ class Data:
                 self.linecut_window.zlabel = self.settings['ylabel']
                 self.linecut_window.title = self.settings['ylabel']+' = '+str(value)
                 self.linecut = self.axes.axhline(
-                        y=value, linestyle='dashed', linewidth=0.5, color='k')
+                        y=value, linestyle='dashed', linewidth=1, color=self.settings['line color'])
             elif self.orientation == 'vertical':
                 x = self.processed_data[1][self.selected_indices[0],:]
                 y = self.processed_data[2][self.selected_indices[0],:]
@@ -1907,7 +1907,7 @@ class Data:
                 self.linecut_window.zlabel = self.settings['xlabel']
                 self.linecut_window.title = self.settings['xlabel']+' = '+str(value)
                 self.linecut = self.axes.axvline(
-                        x=value, linestyle='dashed', linewidth=0.5, color='k')
+                        x=value, linestyle='dashed', linewidth=1, color=self.settings['line color'])
             elif self.orientation == 'diagonal':
                 x0, y0 = self.list_points[0].x, self.list_points[0].y
                 x1, y1 = self.list_points[1].x, self.list_points[1].y
@@ -2169,7 +2169,6 @@ class LineCutWindow(QtWidgets.QWidget):
         self.canvas.draw()
     
     def apply_plot_settings(self):
-        #print('apply_plot_settings')
         self.axes.set_xlabel(self.xlabel, size='xx-large')
         self.axes.set_ylabel(self.ylabel, size='xx-large')
         self.axes.tick_params(labelsize='x-large')
@@ -2300,11 +2299,8 @@ class NavigationToolbarMod(NavigationToolbar):
   
 
 class DraggablePoint:
-
     lock = None #  only one can be animated at a time
-
     def __init__(self, parent, x, y):
-
         self.parent = parent
         self.axes = parent.axes
         
@@ -2318,34 +2314,24 @@ class DraggablePoint:
         self.press = None
         self.background = None
         self.connect()
-
         if self.parent.list_points:
             line_x = [self.parent.list_points[0].x, self.x]
             line_y = [self.parent.list_points[0].y, self.y]
-
-            self.line = Line2D(line_x, line_y, color='r', alpha=0.7)
+            self.line = Line2D(line_x, line_y, color=self.parent.settings['line color'], alpha=1.0, linestyle='dashed', linewidth=1)
             self.axes.add_line(self.line)
 
-
     def connect(self):
-
-        'connect to all the events we need'
-
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
         self.cidrelease = self.point.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cidmotion = self.point.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
 
-
     def on_press(self, event):
-        
         if event.inaxes != self.point.axes: return
         if DraggablePoint.lock is not None: return
         contains, attrd = self.point.contains(event)
         if not contains: return
         self.press = (self.point.center), event.xdata, event.ydata
         DraggablePoint.lock = self
-
-        # draw everything but the selected rectangle and store the pixel buffer
         canvas = self.point.figure.canvas
         axes = self.point.axes
         self.point.set_animated(True)
@@ -2356,16 +2342,11 @@ class DraggablePoint:
                 self.parent.list_points[1].line.set_animated(True)
         canvas.draw()
         self.background = canvas.copy_from_bbox(self.point.axes.bbox)
-
-        # now redraw just the rectangle
         axes.draw_artist(self.point)
-
-        # and blit just the redrawn area
         canvas.blit(axes.bbox)
 
 
     def on_motion(self, event):
-
         if DraggablePoint.lock is not self:
             return
         if event.inaxes != self.point.axes: return
@@ -2373,25 +2354,18 @@ class DraggablePoint:
         dx = event.xdata - xpress
         dy = event.ydata - ypress
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
-
         canvas = self.point.figure.canvas
         axes = self.point.axes
-        # restore the background region
         canvas.restore_region(self.background)
-
-        # redraw just the current rectangle
         axes.draw_artist(self.point)
-
         if len(self.parent.list_points) > 1:
             if self == self.parent.list_points[1]:
                 axes.draw_artist(self.line)
             else:
                 self.parent.list_points[1].line.set_animated(True)
                 axes.draw_artist(self.parent.list_points[1].line)
-
         self.x = self.point.center[0]
         self.y = self.point.center[1]
-
         if len(self.parent.list_points) > 1:
             if self == self.parent.list_points[1]:
                 line_x = [self.parent.list_points[0].x, self.x]
@@ -2402,44 +2376,29 @@ class DraggablePoint:
                 line_y = [self.y, self.parent.list_points[1].y]
     
                 self.parent.list_points[1].line.set_data(line_x, line_y)
-
-        # blit just the redrawn area
         canvas.blit(axes.bbox)
 
 
     def on_release(self, event):
-
-        'on release we reset the press data'
         if DraggablePoint.lock is not self:
             return
-
         self.press = None
         DraggablePoint.lock = None
-
-        # turn off the rect animation property and reset the background
         self.point.set_animated(False)
         if len(self.parent.list_points) > 1:
             if self == self.parent.list_points[1]:
                 self.line.set_animated(False)
             else:
                 self.parent.list_points[1].line.set_animated(False)
-
         self.background = None
-
-        # redraw the full figure
         self.point.figure.canvas.draw()
-
         self.x = self.point.center[0]
         self.y = self.point.center[1]
-        
         if len(self.parent.list_points) > 1:
             self.parent.update_linecut()
             self.parent.linecut_window.activateWindow()
 
     def disconnect(self):
-
-        'disconnect all the stored connection ids'
-
         self.point.figure.canvas.mpl_disconnect(self.cidpress)
         self.point.figure.canvas.mpl_disconnect(self.cidrelease)
         self.point.figure.canvas.mpl_disconnect(self.cidmotion)
