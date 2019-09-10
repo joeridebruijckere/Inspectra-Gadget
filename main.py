@@ -27,8 +27,14 @@ import design
 import filters
 import fits
 
-# Default settings Copenhagen files
+# Default settings (if no meta.json file available)
 DEFAULT_COLUMNS = '0,1,2'
+DEFAULT_COLORMAP = 'magma'
+DEFAULT_XLABEL = 'Gate Voltage (V)'
+DEFAULT_YLABEL = 'Bias Voltage (mV)'
+DEFAULT_CLABEL = 'd$I$/d$V$ ($\mu$S)'
+
+# Default settings meta.json files (Copenhagen data)
 DEFAULT_CHANNEL = 'lockin_curr/X'
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 DEFAULT_VALUE_RCFILTER_CORRECT = False # only for meta.json files; applies rc-filters by default upon opening if True
@@ -37,6 +43,7 @@ SHOW_SETTINGS_ON_CANVAS = False
 
 # Editor settings
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
+SHOW_ERRORS = False
 
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
@@ -275,7 +282,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 last_item.setCheckState(QtCore.Qt.Checked)
         except:
             print('Could not open file(s)...')
-            raise
+            if SHOW_ERRORS:
+                raise
             
     def add_file(self, file, data=None):
         if PRINT_FUNCTION_CALLS:
@@ -291,6 +299,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)
         except:
             print('Could not add', file,'...')
+            if SHOW_ERRORS:
+                raise
         
     def remove_files(self, which='current'):
         if PRINT_FUNCTION_CALLS:
@@ -1391,8 +1401,8 @@ class Data:
         self.filepath = filepath
         self.filename = os.path.basename(filepath)
         self.default_settings = {
-                'title': '', 'xlabel': 'Gate Voltage (V)',
-                'ylabel': 'Bias Voltage (mV)', 'clabel': 'd$I$/d$V$ ($\mu$S)',
+                'title': '', 'xlabel': DEFAULT_XLABEL,
+                'ylabel': DEFAULT_YLABEL, 'clabel': DEFAULT_CLABEL,
                 'titlesize': 'x-large', 'labelsize': 'xx-large', 'ticksize': 'x-large', 
                 'columns': DEFAULT_COLUMNS, 'colorbar': 'True', 'minorticks': 'False', 
                 'delimiter': '', 'line color': 'black', 'mask color': 'white', 
@@ -1429,7 +1439,7 @@ class Data:
         mid_map = 0.5*(min_map+max_map)
         self.default_view_settings = {
                 'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
-                'Color Map': 'magma', 'Color Map Type': 'Uniform',
+                'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
                 'Norm': MidpointNormalize(vmin=min_map, vmax=max_map, midpoint=mid_map),
                 'Locked': 0, 'MidLock': 0, 'Reverse': 0}
         self.view_settings = self.default_view_settings.copy()
@@ -1449,28 +1459,37 @@ class Data:
             print('load_data_from_file')
         column_data = np.genfromtxt(filepath, delimiter=self.settings['delimiter'])
         unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
-        if len(indices) > 1: # if first column has more than one repeated value
+        
+        if len(indices) > 1: # if first column has more than one uniuqe value
+            # shape of data
             l0 = np.sort(indices)[1]
-        else:
-            l0 = len(column_data[:,self.columns[0]])
-        l1 = len(indices) 
-        if len(column_data[np.sort(indices)[-1]::,0]) < l0:
-            l1 = l1-1
-        # check if subsequent column is also repeated (for combination gate sweeps e.g.)
-        if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
-            self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
-        if (column_data[1,self.columns[0]] != column_data[0,self.columns[0]]) or len(self.columns) == 2: # if file is 2D          
-            self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
-            if len(self.columns) == 3:
-                self.columns = self.columns[:-1]
-        else:
-            if indices[1] > indices[0]:
-                self.raw_data = [np.reshape(column_data[:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
-            else:
-                self.raw_data = [np.reshape(column_data[l0*l1-1::-1,x], (l1,l0)) for x in range(column_data.shape[1])]
-            if self.raw_data[1][0,0] > self.raw_data[1][0,1]:
-                self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
-        self.settings['columns'] = ','.join([str(i) for i in self.columns])
+            l1 = len(indices)
+            
+            # ignore last column if unfinished
+            if len(column_data[np.sort(indices)[-1]::,0]) < l0:
+                l1 = l1-1
+                
+            # check if subsequent column is also repeated (for combination gate sweeps e.g.)
+            if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
+                self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
+            
+            # check if file is 2D or 3D
+            if (column_data[1,self.columns[0]] != column_data[0,self.columns[0]]) or len(self.columns) == 2: # if 2D         
+                self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
+                if len(self.columns) == 3:
+                    self.columns = self.columns[:-1]
+            else: # if 3D
+                if indices[1] > indices[0]: # if first column is sorted from low to high --> reshape normally
+                    self.raw_data = [np.reshape(column_data[:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
+                else: # if first column is sorted from high to low --> flip and then reshape normally
+                    self.raw_data = [np.reshape(column_data[l0*l1-1::-1,x], (l1,l0)) for x in range(column_data.shape[1])]
+                    
+                if self.raw_data[1][0,0] > self.raw_data[1][0,1]: # flip is second column is sorted from high to low
+                    self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
+                    
+            self.settings['columns'] = ','.join([str(i) for i in self.columns])
+        else: # if first column has only one unique value --> ignore data; set to zero
+            self.raw_data = [np.array([[0,0],[0,0]]) for x in range(column_data.shape[1])]
 
     def interpret_meta_file(self):
         if PRINT_FUNCTION_CALLS:
