@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere (J.deBruijckere@tudelft.nl)
 
-Last updated on Sep 06 2019
+Last updated on Sep 10 2019
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -71,7 +71,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                            'Angle (degrees)','Temperature (mK)'],
                 'clabel': ['$I$ (nA)', '$I$ (a.u.)', 'Current (nA)', 'd$I$/d$V$ ($\mu$S)', 
                         'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 'd$I$/d$V$ $(e^{2}/h)$', 
-                        'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 'd$^2$I/d$V^2$ (a.u.)', '|d$^2$I/d$V^2$| (a.u.)'],
+                        'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 'd$^2I$/d$V^2$ (a.u.)', '|d$^2I$/d$V^2$| (a.u.)'],
                 'titlesize': font_sizes, 'labelsize': font_sizes, 'ticksize': font_sizes,
                 'colorbar': ['True', 'False'], 'columns': ['0,1,2','0,1,3','0,2,3','1,2,4'],
                 'minorticks': ['True','False'], 'delimiter': ['',','], 
@@ -1174,10 +1174,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 plot_data.multi_orientation = 'horizontal'
             elif signal.text() == 'Plot vertical linecuts...':
                 plot_data.multi_orientation = 'vertical'
-            plot_data.multi_linecuts_window = LineCutWindow(multiple=True)
-            
+            plot_data.multi_linecuts_window = LineCutWindow(multiple=True)            
             plot_data.update_multiple_linecuts()
-            print(plot_data.multi_linecuts_window.isVisible())
         elif signal.text() == 'Enable RC-filter correction...':
             plot_data.rcfilter_correct = True
             plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
@@ -2012,6 +2010,10 @@ class LineCutWindow(QtWidgets.QWidget):
         self.all_lines_button = QtWidgets.QPushButton('All')
         self.all_lines_button.setFixedSize(35,22)
         self.all_lines_button.clicked.connect(self.clicked_all_lines)
+        self.check_specify_lines = QtWidgets.QCheckBox('Specify lines')
+        self.check_specify_lines.clicked.connect(self.draw_plots)
+        self.specify_lines_edit = QtWidgets.QLineEdit('')
+        self.specify_lines_edit.editingFinished.connect(self.draw_plots)
         self.offset_label = QtWidgets.QLabel('Offset')
         self.offset_line_edit = QtWidgets.QLineEdit('0')
         self.offset_line_edit.setFixedSize(70,20)
@@ -2021,6 +2023,8 @@ class LineCutWindow(QtWidgets.QWidget):
         self.control_layout.addWidget(self.number_label)
         self.control_layout.addWidget(self.number_line_edit)
         self.control_layout.addWidget(self.all_lines_button)
+        self.control_layout.addWidget(self.check_specify_lines)
+        self.control_layout.addWidget(self.specify_lines_edit)        
         self.control_layout.addWidget(self.offset_label)
         self.control_layout.addWidget(self.offset_line_edit)
         self.control_layout.addWidget(self.check_legend)
@@ -2158,21 +2162,37 @@ class LineCutWindow(QtWidgets.QWidget):
         self.number = int(self.number_line_edit.text())
         self.offset = float(self.offset_line_edit.text())
         selected_colormap = cm.get_cmap(self.colormap_box.currentText())
-        line_colors = selected_colormap(np.linspace(0,1,self.number))
         if self.orientation == 'horizontal':
-            indices = np.linspace(0, cols-1, self.number, dtype=int)
+            if self.check_specify_lines.checkState() == 0:
+                indices = np.linspace(0, cols-1, self.number, dtype=int)
+            else:
+                try:
+                    indices = [np.argmin(np.abs(self.data[1][0,:]-float(s))) for s in self.specify_lines_edit.text().split(',')]
+                    self.number = len(indices)
+                except:
+                    indices = []
+                    self.number = 0
             self.x = self.data[0][:,indices].transpose()
             self.y = self.data[2][:,indices].transpose()
             self.z = self.data[1][:,indices].transpose()
         elif self.orientation == 'vertical':
-            indices = np.linspace(0, rows-1, self.number, dtype=int)
+            if self.check_specify_lines.checkState() == 0:
+                indices = np.linspace(0, rows-1, self.number, dtype=int)
+            else:
+                try:
+                    indices = [np.argmin(np.abs(self.data[0][:,0]-float(s))) for s in self.specify_lines_edit.text().split(',')]
+                    self.number = len(indices)
+                except:
+                    indices = []
+                    self.number = 0
             self.x = self.data[1][indices,:]
             self.y = self.data[2][indices,:]
             self.z = self.data[0][indices,:]
+        line_colors = selected_colormap(np.linspace(0,1,self.number))
         for index in range(self.number):
             self.axes.plot(self.x[index], self.y[index]+index*self.offset, 
                            color=line_colors[index], linewidth=0.8, 
-                           label=str(self.z[index][0]))
+                           label='{:.5g}'.format(self.z[index][0]))
         if self.check_legend.checkState():
             self.axes.legend(title=self.zlabel)
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
@@ -2425,7 +2445,8 @@ class DraggablePoint:
     
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    app.aboutToQuit.connect(app.deleteLater)
+    #app.aboutToQuit.connect(app.deleteLater)
+    app.lastWindowClosed.connect(app.quit)
     edit_window = Editor()
     edit_window.show()
     app.exec_()
