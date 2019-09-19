@@ -488,6 +488,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.lock_checkbox.setCheckState(QtCore.Qt.Checked)
             else:
                 self.lock_checkbox.setCheckState(QtCore.Qt.Unchecked)
+            if settings['MidLock']:
+                self.mid_checkbox.setCheckState(QtCore.Qt.Checked)
+            else:
+                self.mid_checkbox.setCheckState(QtCore.Qt.Unchecked)
             self.colormap_type_box.currentIndexChanged.disconnect(self.colormap_type_edited)
             self.colormap_type_box.setCurrentText(settings['Color Map Type'])
             self.colormap_type_box.currentIndexChanged.connect(self.colormap_type_edited)
@@ -503,6 +507,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.min_line_edit.setText('')
             self.max_line_edit.setText('')
             self.lock_checkbox.setCheckState(QtCore.Qt.Unchecked)
+            self.mid_checkbox.setCheckState(QtCore.Qt.Unchecked)
     
     def show_current_filters(self):
         if PRINT_FUNCTION_CALLS:
