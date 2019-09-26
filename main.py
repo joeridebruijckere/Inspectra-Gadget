@@ -36,9 +36,9 @@ DEFAULT_PLOT_SETTINGS['title'] = ''
 DEFAULT_PLOT_SETTINGS['xlabel'] = '$V_{\mathrm{g}}$ (V)'
 DEFAULT_PLOT_SETTINGS['ylabel'] = '$V$ (mV)'
 DEFAULT_PLOT_SETTINGS['clabel'] = 'd$I$/d$V$ ($\mu$S)'
-DEFAULT_PLOT_SETTINGS['titlesize'] = '16' #'x-large'
-DEFAULT_PLOT_SETTINGS['labelsize'] = '18' #'xx-large'
-DEFAULT_PLOT_SETTINGS['ticksize'] = '16' #'x-large'
+DEFAULT_PLOT_SETTINGS['titlesize'] = '16'
+DEFAULT_PLOT_SETTINGS['labelsize'] = '18' 
+DEFAULT_PLOT_SETTINGS['ticksize'] = '16'
 DEFAULT_PLOT_SETTINGS['spinewidth'] = '0.8'
 DEFAULT_PLOT_SETTINGS['columns'] = '0,1,2'
 DEFAULT_PLOT_SETTINGS['colorbar'] = 'True'
@@ -61,7 +61,7 @@ DEFAULT_SHOW_METADATANAME = False
 SHOW_SETTINGS_ON_CANVAS = False
 
 # Editor settings
-PRINT_FUNCTION_CALLS = True # print function commands in terminal when called
+PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
 SHOW_ERRORS = False
 
 rcParams['pdf.fonttype'] = 42
@@ -1316,22 +1316,32 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
             self.update_plots()
             self.show_current_all()
-        elif signal.text() == 'Copy canvas to clipboard...':            
+        elif signal.text() == 'Copy canvas to clipboard...':
+            self.copy_canvas_to_clipboard()
+            
+    def copy_canvas_to_clipboard(self):
+        file_list = self.file_list
+        checked_items = [file_list.item(index) for index in range(file_list.count()) 
+                        if file_list.item(index).checkState() == 2]
+        for item in checked_items:
+            plot_data = item.data(QtCore.Qt.UserRole)
             plot_data.cursor.horizOn = False
             plot_data.cursor.vertOn = False            
-            self.canvas.draw()            
-            buf = io.BytesIO()
-            try:
-                dpi = int(plot_data.settings['dpi'])
-            except:
-                dpi = 'figure'
-            self.figure.savefig(buf, dpi=dpi, 
-                                transparent=plot_data.settings['transparent']=='True', bbox_inches='tight')
-            QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
-            buf.close()            
+        self.canvas.draw()            
+        buf = io.BytesIO()
+        try:
+            dpi = int(plot_data.settings['dpi'])
+        except:
+            dpi = 'figure'
+        self.figure.savefig(buf, dpi=dpi, 
+                            transparent=plot_data.settings['transparent']=='True', bbox_inches='tight')
+        QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
+        buf.close()
+        for item in checked_items:
+            plot_data = item.data(QtCore.Qt.UserRole)
             plot_data.cursor.horizOn = True
-            plot_data.cursor.vertOn = True            
-            self.canvas.draw()
+            plot_data.cursor.vertOn = True                       
+        self.canvas.draw()
             
     def mouse_scroll_canvas(self, event):
         if PRINT_FUNCTION_CALLS:
@@ -1393,7 +1403,12 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.figure.subplots_adjust(top=(1+speed*0.5*event.step)*self.figure.subplotpars.top)
             self.canvas.draw()
             
-                    
+    def keyPressEvent(self, event):
+        if PRINT_FUNCTION_CALLS:
+            print('keyPressEvent', event.key(), event.modifiers())
+        if event.key() == QtCore.Qt.Key_C and event.modifiers() == QtCore.Qt.ControlModifier:
+            self.copy_canvas_to_clipboard()  
+               
     def merge_files(self, raw_data=True):
         if PRINT_FUNCTION_CALLS:
             print('merge_files')
