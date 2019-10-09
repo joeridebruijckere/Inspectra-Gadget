@@ -1494,6 +1494,7 @@ class Data:
         self.meta_data = None
         self.meta_data_name = None
         self.rcfilter_correct = False
+        self.four_terminal = False
         
         if npy_data: # .npy data file
             self.npy_file = True
@@ -1606,8 +1607,10 @@ class Data:
             self.settings['columns'] = self.settings['columns'][:-1]+str(new_index)
         except:
             print('Default channel',DEFAULT_CHANNEL,'not found...')
+        
         if DEFAULT_SHOW_METADATANAME:
             self.settings['title'] = '<metadataname>'
+        
         self.settings_string = ''
         if SHOW_SETTINGS_ON_CANVAS:
             channels_to_show = ['source', 'g1', 'g2', 'g3', 'g4', 'g4f', 'g5', 'g6', 'g6f', 'bg', 'Bx', 'Bz', 'T']
@@ -1815,6 +1818,26 @@ class Data:
                     else:
                         self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
 
+        if 'lockin_bias/X' in self.channels and 'lockin_curr/X' in self.channels: # 4-terminal, current-biased
+            lockin_bias_index = self.channels.index('lockin_bias/X')
+            if lockin_bias_index in self.columns:
+                curr_amp = self.meta_data['setup']['meta']['current_amp']
+                bias_amp = self.meta_data['setup']['meta']['bias_amp']
+                if PRINT_FUNCTION_CALLS:
+                    print('Converting lockin_bias/X to 4-terminal dV/dI in units of Ohm...')
+                conversion_factor = curr_amp/bias_amp
+                if conversion_factor != 1.0:
+                    divide = '%.3g' % conversion_factor
+                    axis = ['X','Y','Z'][self.columns.index(lockin_bias_index)] 
+                    self.filters.append({'Name': 'Multiply', 'Method': axis, 
+                                         'Setting 1': divide, 'Setting 2': '', 'Checked': 2})                
+                if self.columns.index(lockin_bias_index) == 1:
+                    self.settings['ylabel'] = 'd$V$/d$I$ ($\Omega$)'
+                elif self.columns.index(lockin_bias_index) == 2:
+                    self.settings['clabel'] = 'd$V$/d$I$ ($\Omega$)'
+                self.four_terminal = True
+        else:
+            self.four_terminal = False
         
         if 'Bx' in self.channels:
             if self.channels.index('Bx') == 0:  
@@ -1822,6 +1845,10 @@ class Data:
         
         if 'Bz' in self.channels:
             if self.channels.index('Bz') == 0:  
+                self.measurement_bounds = [bound_from, bound_to]
+                
+        if 'Br' in self.channels:
+            if self.channels.index('Br') == 0:  
                 self.measurement_bounds = [bound_from, bound_to]
                
     def processed_to_raw(self):
@@ -1977,11 +2004,18 @@ class Data:
         if PRINT_FUNCTION_CALLS:
             print('apply_all_filters')
         self.processed_to_raw()
-        if self.rcfilter_correct:
-            self.correct_for_rcfilters()
-        if self.meta_data and refresh_unit_conversion:
-            self.filters = []
-            self.meta_unit_conversion()
+        if self.meta_data:
+            if self.rcfilter_correct:
+                self.correct_for_rcfilters()
+            if refresh_unit_conversion:
+                self.filters = []
+                self.meta_unit_conversion()
+            if self.four_terminal:
+                lockin_bias_index = self.channels.index('lockin_bias/X')
+                if lockin_bias_index in self.columns:
+                    lockin_curr_index = self.channels.index('lockin_curr/X')
+                    self.processed_data[self.columns.index(lockin_bias_index)] = (self.raw_data[lockin_bias_index] / 
+                                        self.raw_data[lockin_curr_index])
         for _, filter_settings in enumerate(self.filters):
             if filter_settings['Checked']:
                 if PRINT_FUNCTION_CALLS:
