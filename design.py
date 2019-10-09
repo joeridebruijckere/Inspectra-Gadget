@@ -340,6 +340,8 @@ class Ui_MainWindow(object):
         self.menu_save_image.setObjectName("menu_save_image")
         self.menu_open_folder = QtWidgets.QMenu(self.menu_bar)
         self.menu_open_folder.setObjectName("menu_open_folder")
+        self.menu_apply_preset = QtWidgets.QMenu(self.menu_bar)
+        self.menu_apply_preset.setObjectName("menu_apply_preset")
         MainWindow.setMenuBar(self.menu_bar)
         self.actionNew = QtWidgets.QAction(MainWindow)
         self.actionNew.setObjectName("actionNew")
@@ -407,6 +409,8 @@ class Ui_MainWindow(object):
         self.action_save_files_as_PNG.setObjectName("action_save_files_as_PNG")
         self.action_save_files_as_PDF = QtWidgets.QAction(MainWindow)
         self.action_save_files_as_PDF.setObjectName("action_save_files_as_PDF")
+        self.action_preset_1 = QtWidgets.QAction(MainWindow)
+        self.action_preset_1.setObjectName("action_preset_1")
         self.menu_auto_refresh.addAction(self.action_refresh_30s)
         self.menu_auto_refresh.addAction(self.action_refresh_5m)
         self.menu_auto_refresh.addAction(self.action_refresh_30m)
@@ -420,11 +424,13 @@ class Ui_MainWindow(object):
         self.menu_open_folder.addAction(self.action_open_files_from_folder)
         self.menu_open_folder.addAction(self.action_save_files_as_PNG)
         self.menu_open_folder.addAction(self.action_save_files_as_PDF)
+        self.menu_apply_preset.addAction(self.action_preset_1)
         self.menu_bar.addAction(self.menu_save_image.menuAction())
         self.menu_bar.addAction(self.menu_save_session.menuAction())
         self.menu_bar.addAction(self.menu_auto_refresh.menuAction())
         self.menu_bar.addAction(self.menu_merge_data.menuAction())
         self.menu_bar.addAction(self.menu_open_folder.menuAction())
+        self.menu_bar.addAction(self.menu_apply_preset.menuAction())
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
@@ -464,6 +470,7 @@ class Ui_MainWindow(object):
         self.menu_merge_data.setTitle(_translate("MainWindow", "Merge Data"))
         self.menu_save_image.setTitle(_translate("MainWindow", "Save Image"))
         self.menu_open_folder.setTitle(_translate("MainWindow", "Batch Actions"))
+        self.menu_apply_preset.setTitle(_translate("MainWindow", "Apply Preset"))
         self.actionNew.setText(_translate("MainWindow", "New"))
         self.actionNewWindow.setText(_translate("MainWindow", "New Window..."))
         self.actionOpen_File.setText(_translate("MainWindow", "Open File..."))
@@ -497,6 +504,7 @@ class Ui_MainWindow(object):
         self.action_open_files_from_folder.setText(_translate("MainWindow", "Open Files From Folder..."))
         self.action_save_files_as_PNG.setText(_translate("MainWindow", "Save Opened Files as PNG..."))
         self.action_save_files_as_PDF.setText(_translate("MainWindow", "Save Opened Files as PDF..."))
+        self.action_preset_1.setText(_translate("MainWindow", "Preset 1..."))
 
 
 if __name__ == "__main__":
