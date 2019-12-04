@@ -2111,8 +2111,7 @@ class Data:
                 i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
                 i_y1 = (l_y-1)*(y1-y_min)/(y_max-y_min)
                 
-                n = 200 # TODO
-                
+                n = int(8*np.sqrt((i_x0-i_x1)**2+(i_y0-i_y1)**2))
                 theta = np.linspace(0, 2*np.pi, n)
                 
                 i_x_circ = i_x0+(i_x1-i_x0)*np.cos(theta) 
