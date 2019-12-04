@@ -17,7 +17,7 @@ def apply(data, filter_settings):
                        'Normalize': normalize, 'Offset': offset, 
                        'Absolute': absolute, 'Multiply': mulitply, 'Slope': slope, 
                        'Logarithm': logarithm, 'Band cut': band_cut, 'Interp': interpolate,
-                       'Subtract': subtract_trace, 'Divide': divide}
+                       'Subtract': subtract_trace, 'Divide': divide, 'Invert': invert}
     filtered_data = filter_functions[filter_settings['Name']](data, filter_settings['Method'],
                            filter_settings['Setting 1'], filter_settings['Setting 2'])
     return filtered_data
@@ -39,7 +39,8 @@ def get_list(filter_name=''):
             'Offset': ['X','Y','Z'], 'Absolute': [], 'Multiply': ['X','Y','Z'], 
             'Slope': [], 'Logarithm': ['Mask','Shift','Abs'],
             'Band cut': ['Y', 'X'], 'Interp': ['linear','cubic','quintic'],
-            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z']}
+            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z'],
+            'Invert': ['X','Y','Z']}
     if filter_name:
         return_list = filter_methods[filter_name]
     else:
@@ -286,9 +287,9 @@ def subtract_trace(data, method, index, setting2):
     if len(data) == 3:
         index = int(float(index))
         if method == 'Horizontal':
-            data[2] -= np.tile(data[2][:,index], (len(data[2][0,:]),1)).T
+            data[-1] -= np.tile(data[-1][:,index], (len(data[-1][0,:]),1)).T
         elif method == 'Vertical':
-            data[2] -= np.tile(data[2][index,:], (len(data[2][:,0]),1))
+            data[-1] -= np.tile(data[-1][index,:], (len(data[-1][:,0]),1))
     return data
    
 def divide(data, method, setting1, setting2):
@@ -298,3 +299,10 @@ def divide(data, method, setting1, setting2):
     elif len(data) == 2 and axis[method] < 2:
         data[axis[method]] /= float(setting1)
     return data
+
+def invert(data, method, setting1, setting2):
+    axis = {'X': 0, 'Y': 1, 'Z': -1}
+    data[axis[method]] = 1./data[axis[method]]
+    return data
+        
+        

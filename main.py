@@ -35,7 +35,7 @@ DEFAULT_PLOT_SETTINGS = {}
 DEFAULT_PLOT_SETTINGS['title'] = ''
 DEFAULT_PLOT_SETTINGS['xlabel'] = '$V_{\mathrm{g}}$ (V)'
 DEFAULT_PLOT_SETTINGS['ylabel'] = '$V$ (mV)'
-DEFAULT_PLOT_SETTINGS['clabel'] = 'd$I$/d$V$ ($\mu$S)'
+DEFAULT_PLOT_SETTINGS['clabel'] = 'd$I$/d$V$ (μS)'
 DEFAULT_PLOT_SETTINGS['titlesize'] = '16'
 DEFAULT_PLOT_SETTINGS['labelsize'] = '18' 
 DEFAULT_PLOT_SETTINGS['ticksize'] = '16'
@@ -61,8 +61,8 @@ DEFAULT_SHOW_METADATANAME = False
 SHOW_SETTINGS_ON_CANVAS = False
 
 # Editor settings
-PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
-SHOW_ERRORS = False
+PRINT_FUNCTION_CALLS = True # print function commands in terminal when called
+SHOW_ERRORS = True
 
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
@@ -131,11 +131,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.settings_menu_list = OrderedDict()
         self.settings_menu_list['title'] = ['<filename>','<metadataname>']
         self.settings_menu_list['xlabel'] = ['Gate Voltage (V)', '$V_{\mathrm{g}}$ (V)', 
-                               'Magnetic Field (T)', '$B$ (T)', 'Angle (degrees)']
+                               'Magnetic Field (T)', '$B$ (T)', '$V$ (mV)', 'Angle (degrees)']
         self.settings_menu_list['ylabel'] = ['Bias Voltage (mV)', '$V$ (mV)', 'Gate Voltage (V)', 
-                               '$V_{\mathrm{g}}$ (V)', 'Angle (degrees)','Temperature (mK)']
+                               '$V_{\mathrm{g}}$ (V)', 'd$I$/d$V$ (μS)', 'Angle (degrees)','Temperature (mK)']
         self.settings_menu_list['clabel'] = ['$I$ (nA)', '$I$ (a.u.)', 'Current (nA)', 
-                               'd$I$/d$V$ ($\mu$S)', 'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 
+                               'd$I$/d$V$ (μS)', 'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 
                                'd$I$/d$V$ $(e^{2}/h)$', 'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 
                                'd$^2I$/d$V^2$ (a.u.)', '|d$^2I$/d$V^2$| (a.u.)']
         self.settings_menu_list['titlesize'] = font_sizes
@@ -214,7 +214,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 'Subtract': {'Name': 'Subtract', 'Method': 'Vertical',
                              'Setting 1': '0', 'Setting 2': '', 'Checked': 0},
                 'Divide': {'Name': 'Divide', 'Method': 'Z',
-                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2}}                  
+                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
+                'Invert': {'Name': 'Invert', 'Method': 'Z',
+                             'Setting 1': '', 'Setting 2': '', 'Checked': 2}}                  
         self.filters_combobox.addItem('<Add Filter>')
         self.filters_combobox.addItems(filters.get_list())
         table = self.filters_table
@@ -1071,6 +1073,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
                 if self.plot_in_focus:
                     plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
+                    plot_data.selected_x, plot_data.selected_y = x, y
                     data = plot_data.processed_data
                     
                     if (event.button == 1 or event.button == 2) and len(plot_data.columns) == 3 and not plot_data.list_points:
@@ -1156,7 +1159,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                 plot_data.linecut_index_from = [int(index_x), int(index_y)]
                                 plot_data.linecut_from = [x, y]
                             menu.addAction(action)
-                            entries = ['Plot vertical linecuts...',
+                            entries = ['Draw circular linecut...',
+                                       'Plot vertical linecuts...',
                                        'Plot horizontal linecuts...',
                                        'FFT vertical...',
                                        'FFT horizontal...',
@@ -1200,18 +1204,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print(signal.text())
         plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
         if signal.text() == 'Hide linecuts...':
-            plot_data.linecut_window.running = False         
-            for line in plot_data.axes.get_lines():
-                line.remove()
-                del line
-            for patch in plot_data.axes.patches:
-                patch.remove()
-                del patch
-            for patch in plot_data.axes.patches:
-                patch.remove()
-                del patch
-            plot_data.list_points = []
-            self.canvas.draw()
+            self.hide_linecuts(plot_data)
         elif signal.text() == 'Refresh plot...':
             plot_data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
             self.update_plots()
@@ -1262,16 +1255,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.cropping = False
         elif signal.text() == 'Diagonal linecut from...':
             if plot_data.list_points:
-                for line in plot_data.axes.get_lines():
-                    line.remove()
-                    del line
-                for patch in plot_data.axes.patches:
-                    patch.remove()
-                    del patch
-                for patch in plot_data.axes.patches:
-                    patch.remove()
-                    del patch
-                plot_data.list_points = []
+                self.hide_linecuts(plot_data)
             x1, y1 = plot_data.linecut_from
             plot_data.drawing_diagonal_linecut = True
             plot_data.list_points.append(DraggablePoint(plot_data, x1, y1))
@@ -1288,7 +1272,27 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.update_linecut()
             self.canvas.draw()
             plot_data.drawing_diagonal_linecut = False
-            plot_data.linecut_window.activateWindow()            
+            plot_data.linecut_window.activateWindow()
+        elif signal.text() == 'Draw circular linecut...':
+            pass
+#            if plot_data.list_points:
+#                self.hide_linecuts(plot_data)
+#            left, right = plot_data.axes.get_xlim() 
+#            bottom, top = plot_data.axes.get_ylim()                
+#            x0, y0 = plot_data.selected_x, plot_data.selected_y
+#            plot_data.xr, plot_data.yr = 0.1*(right-left), 0.1*(top-bottom)
+#            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0, draw_line=False, draw_circle=True))
+#            plot_data.list_points.append(DraggablePoint(plot_data, x0+plot_data.xr, y0, draw_line=False, draw_circle=True))
+#            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0+plot_data.yr, draw_line=False, draw_circle=True))
+#            plot_data.orientation = 'circular'
+#            try:
+#                plot_data.linecut_window
+#            except AttributeError:
+#                plot_data.linecut_window = LineCutWindow()
+#            plot_data.linecut_window.running = True
+#            plot_data.update_linecut()
+#            self.canvas.draw()
+#            plot_data.linecut_window.activateWindow()  
         elif signal.text() == 'Show full range...':
             plot_data.draw_full_range = True
             plot_data.axes.set_xlim(left=min(plot_data.measurement_bounds), 
@@ -1318,7 +1322,21 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.show_current_all()
         elif signal.text() == 'Copy canvas to clipboard...':
             self.copy_canvas_to_clipboard()
-            
+      
+    def hide_linecuts(self, plot_data):
+        plot_data.linecut_window.running = False         
+        for line in plot_data.axes.get_lines():
+            line.remove()
+            del line
+        for patch in plot_data.axes.patches:
+            patch.remove()
+            del patch
+        for patch in plot_data.axes.patches:
+            patch.remove()
+            del patch
+        plot_data.list_points = []
+        self.canvas.draw()
+        
     def copy_canvas_to_clipboard(self):
         file_list = self.file_list
         checked_items = [file_list.item(index) for index in range(file_list.count()) 
@@ -1543,6 +1561,7 @@ class Data:
         self.multi_orientation = None
         self.cropping = False
         self.drawing_diagonal_linecut = False
+        self.drawing_circular_linecut = False
         self.list_points = []        
         
     def load_data_from_file(self, filepath):
@@ -1673,9 +1692,10 @@ class Data:
                 sine_amplitude = float(instrument['config']['SLVL'])
                 lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
-                conversion = curr_amp*sine_amplitude/lockin_divider # to Siemens (1/Ohm)
+                conversion = curr_amp*sine_amplitude/lockin_divider # divide by this to convert lockin-signal to Siemens (1/Ohm)
                 lockin_data = self.raw_data[lockin_index]/conversion # in Siemens
-                lockin_corrected = lockin_data/(1.0-float(self.settings['rc-filter'])*lockin_data)*conversion
+                series_resistance = float(self.settings['rc-filter']) # in Ohm
+                lockin_corrected = lockin_data/(1.-series_resistance*lockin_data)*conversion
                 self.processed_data[self.columns.index(lockin_index)] = np.copy(lockin_corrected)                
     
     def meta_unit_conversion(self):
@@ -1791,17 +1811,18 @@ class Data:
                 sine_amplitude = float(instrument['config']['SLVL'])
                 lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
                 curr_amp = self.meta_data['setup']['meta']['current_amp']
-                
-                if PRINT_FUNCTION_CALLS:
-                    print('Correcting lockin_curr/X units to microsiemens...')
                 LOCKIN_UNIT = 1e-6 # Siemens to microsiemens
                 conversion_factor = curr_amp*sine_amplitude/lockin_divider*LOCKIN_UNIT
                 if conversion_factor != 1.0:
+                    if PRINT_FUNCTION_CALLS:
+                        print('Correcting lockin_curr/X units to microsiemens...')
                     divide = '%.3g' % conversion_factor
                     axis = ['X','Y','Z'][self.columns.index(lockin_index)] 
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
                 if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
+                    if PRINT_FUNCTION_CALLS:
+                        print('Correcting lockin_curr/X units from microsiemens to e^2/h...')
                     multiply_e2h = '%.6g' % 0.0258128
                     axis = ['X','Y','Z'][self.columns.index(lockin_index)] 
                     self.filters.append({'Name': 'Multiply', 'Method': axis, 
@@ -1811,12 +1832,12 @@ class Data:
                     if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
                         self.settings['ylabel'] = 'd$I$/d$V$ ($e^2/h$)'
                     else:
-                        self.settings['ylabel'] = 'd$I$/d$V$ ($\mu$S)'
+                        self.settings['ylabel'] = 'd$I$/d$V$ (μS)'
                 elif self.columns.index(lockin_index) == 2:
                     if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
                         self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
                     else:
-                        self.settings['clabel'] = 'd$I$/d$V$ ($\mu$S)'
+                        self.settings['clabel'] = 'd$I$/d$V$ (μS)'
 
         if 'lockin_bias/X' in self.channels and 'lockin_curr/X' in self.channels: # 4-terminal, current-biased
             lockin_bias_index = self.channels.index('lockin_bias/X')
@@ -2004,6 +2025,7 @@ class Data:
         if PRINT_FUNCTION_CALLS:
             print('apply_all_filters')
         self.processed_to_raw()
+        
         if self.meta_data:
             if self.rcfilter_correct:
                 self.correct_for_rcfilters()
@@ -2016,6 +2038,7 @@ class Data:
                     lockin_curr_index = self.channels.index('lockin_curr/X')
                     self.processed_data[self.columns.index(lockin_bias_index)] = (self.raw_data[lockin_bias_index] / 
                                         self.raw_data[lockin_curr_index])
+        
         for _, filter_settings in enumerate(self.filters):
             if filter_settings['Checked']:
                 if PRINT_FUNCTION_CALLS:
@@ -2059,11 +2082,17 @@ class Data:
                 x0, y0 = self.list_points[0].x, self.list_points[0].y
                 x1, y1 = self.list_points[1].x, self.list_points[1].y
                 
-                i_x0 = np.argmin(np.abs(x0-self.processed_data[0][:,0]))
-                i_y0 = np.argmin(np.abs(y0-self.processed_data[1][0,:]))
-                i_x1 = np.argmin(np.abs(x1-self.processed_data[0][:,0]))
-                i_y1 = np.argmin(np.abs(y1-self.processed_data[1][0,:]))
-
+                l_x, l_y = self.processed_data[0].shape
+                x_min = np.amin(self.processed_data[0][:,0])
+                x_max = np.amax(self.processed_data[0][:,0])
+                y_min = np.amin(self.processed_data[1][0,:])
+                y_max = np.amax(self.processed_data[1][0,:])
+                    
+                i_x0 = (l_x-1)*(x0-x_min)/(x_max-x_min)
+                i_y0 = (l_y-1)*(y0-y_min)/(y_max-y_min)
+                i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
+                i_y1 = (l_y-1)*(y1-y_min)/(y_max-y_min)
+                
                 n = int(np.sqrt((i_x1-i_x0)**2+(i_y1-i_y0)**2))
                 x_diag, y_diag = np.linspace(i_x0, i_x1, n), np.linspace(i_y0, i_y1, n)
                 y = map_coordinates(self.processed_data[-1], np.vstack((x_diag, y_diag)))
@@ -2071,6 +2100,37 @@ class Data:
                 self.linecut_window.xlabel = self.settings['xlabel']
                 self.linecut_window.zlabel = ''
                 self.linecut_window.title = ''
+            elif self.orientation == 'circular':
+                x0, y0 = self.list_points[0].x, self.list_points[0].y
+                x1, y1 = self.list_points[1].x, self.list_points[1].y
+                                
+                l_x, l_y = self.processed_data[0].shape
+                x_min = np.amin(self.processed_data[0][:,0])
+                x_max = np.amax(self.processed_data[0][:,0])
+                y_min = np.amin(self.processed_data[1][0,:])
+                y_max = np.amax(self.processed_data[1][0,:])
+                    
+                i_x0 = (l_x-1)*(x0-x_min)/(x_max-x_min)
+                i_y0 = (l_y-1)*(y0-y_min)/(y_max-y_min)
+                i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
+                i_y1 = (l_y-1)*(y1-y_min)/(y_max-y_min)
+                
+                n = 200 # TODO
+                
+                theta = np.linspace(0, 2*np.pi, n)
+                
+                i_x_circ = i_x0+i_x1*np.cos(theta) 
+                i_y_circ = i_y0+i_y1*np.sin(theta)
+                
+                y = map_coordinates(self.processed_data[-1], np.vstack((i_x_circ, i_y_circ)))
+                x = theta
+               
+                self.linecut_window.xlabel = self.settings['xlabel']
+                self.linecut_window.zlabel = ''
+                self.linecut_window.title = ''
+                x_ = x0 + x1*np.cos(theta)
+                y_ = y0 + y1*np.sin(theta)
+                self.axes.plot(x_,y_,'r.')
 
             self.linecut_window.ylabel = self.settings['clabel']
             self.linecut_window.draw_plot(x, y)
@@ -2450,25 +2510,33 @@ class NavigationToolbarMod(NavigationToolbar):
 
 class DraggablePoint:
     lock = None #  only one can be animated at a time
-    def __init__(self, parent, x, y):
+    def __init__(self, parent, x, y, draw_line=True, draw_circle=False):
         self.parent = parent
         self.axes = parent.axes
+        self.draw_line = draw_line
+        self.draw_circle = draw_circle
         
-        x0, x1 = self.axes.get_xlim()
-        y0, y1 = self.axes.get_ylim()
+        x_lb, x_ub = self.axes.get_xlim()
+        y_lb, y_ub = self.axes.get_ylim()
         
-        self.point = patches.Ellipse((x, y), (x1-x0)*0.05, (y1-y0)*0.05, fc='r', alpha=0, edgecolor='k')
+        self.point = patches.Ellipse((x, y), (x_ub-x_lb)*0.01, (y_ub-y_lb)*0.01, fc='k', alpha=1, edgecolor='k')
         self.x = x
         self.y = y
         self.axes.add_patch(self.point)
         self.press = None
         self.background = None
         self.connect()
-        if self.parent.list_points:
+        
+        if self.parent.list_points and self.draw_line:
             line_x = [self.parent.list_points[0].x, self.x]
             line_y = [self.parent.list_points[0].y, self.y]
             self.line = Line2D(line_x, line_y, color=self.parent.settings['linecolor'], alpha=1.0, linestyle='dashed', linewidth=1)
             self.axes.add_line(self.line)
+#        if self.parent.list_points and self.draw_circle:
+#            x0, y0 = self.parent.list_points[0].x, self.parent.list_points[0].y
+#            x1, y1 = self.x, self.y # TODO
+#            self.circle = patches.Ellipse((x0, y0), 2*xr, 2*yr, fc='none', alpha=None, edgecolor='k')
+#            self.axes.add_patch(self.circle)
 
     def connect(self):
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
@@ -2485,7 +2553,7 @@ class DraggablePoint:
         canvas = self.point.figure.canvas
         axes = self.point.axes
         self.point.set_animated(True)
-        if len(self.parent.list_points) > 1:
+        if len(self.parent.list_points) > 1 and self.draw_line:
             if self == self.parent.list_points[1]:
                 self.line.set_animated(True)
             else:
@@ -2508,7 +2576,7 @@ class DraggablePoint:
         axes = self.point.axes
         canvas.restore_region(self.background)
         axes.draw_artist(self.point)
-        if len(self.parent.list_points) > 1:
+        if len(self.parent.list_points) > 1 and self.draw_line:
             if self == self.parent.list_points[1]:
                 axes.draw_artist(self.line)
             else:
@@ -2516,7 +2584,7 @@ class DraggablePoint:
                 axes.draw_artist(self.parent.list_points[1].line)
         self.x = self.point.center[0]
         self.y = self.point.center[1]
-        if len(self.parent.list_points) > 1:
+        if len(self.parent.list_points) > 1 and self.draw_line:
             if self == self.parent.list_points[1]:
                 line_x = [self.parent.list_points[0].x, self.x]
                 line_y = [self.parent.list_points[0].y, self.y]
@@ -2535,7 +2603,7 @@ class DraggablePoint:
         self.press = None
         DraggablePoint.lock = None
         self.point.set_animated(False)
-        if len(self.parent.list_points) > 1:
+        if len(self.parent.list_points) > 1 and self.draw_line:
             if self == self.parent.list_points[1]:
                 self.line.set_animated(False)
             else:
