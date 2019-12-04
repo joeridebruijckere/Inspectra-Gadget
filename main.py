@@ -1274,25 +1274,24 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.drawing_diagonal_linecut = False
             plot_data.linecut_window.activateWindow()
         elif signal.text() == 'Draw circular linecut...':
-            pass
-#            if plot_data.list_points:
-#                self.hide_linecuts(plot_data)
-#            left, right = plot_data.axes.get_xlim() 
-#            bottom, top = plot_data.axes.get_ylim()                
-#            x0, y0 = plot_data.selected_x, plot_data.selected_y
-#            plot_data.xr, plot_data.yr = 0.1*(right-left), 0.1*(top-bottom)
-#            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0, draw_line=False, draw_circle=True))
-#            plot_data.list_points.append(DraggablePoint(plot_data, x0+plot_data.xr, y0, draw_line=False, draw_circle=True))
-#            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0+plot_data.yr, draw_line=False, draw_circle=True))
-#            plot_data.orientation = 'circular'
-#            try:
-#                plot_data.linecut_window
-#            except AttributeError:
-#                plot_data.linecut_window = LineCutWindow()
-#            plot_data.linecut_window.running = True
-#            plot_data.update_linecut()
-#            self.canvas.draw()
-#            plot_data.linecut_window.activateWindow()  
+            if plot_data.list_points:
+                self.hide_linecuts(plot_data)
+            left, right = plot_data.axes.get_xlim() 
+            bottom, top = plot_data.axes.get_ylim()                
+            x0, y0 = plot_data.selected_x, plot_data.selected_y
+            plot_data.xr, plot_data.yr = 0.1*(right-left), 0.1*(top-bottom)
+            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0, draw_line=False, draw_circle=True))
+            plot_data.list_points.append(DraggablePoint(plot_data, x0+plot_data.xr, y0, draw_line=False, draw_circle=True))
+            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0+plot_data.yr, draw_line=False, draw_circle=True))
+            plot_data.orientation = 'circular'
+            try:
+                plot_data.linecut_window
+            except AttributeError:
+                plot_data.linecut_window = LineCutWindow()
+            plot_data.linecut_window.running = True
+            plot_data.update_linecut()
+            self.canvas.draw()
+            plot_data.linecut_window.activateWindow()  
         elif signal.text() == 'Show full range...':
             plot_data.draw_full_range = True
             plot_data.axes.set_xlim(left=min(plot_data.measurement_bounds), 
@@ -1328,10 +1327,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         for line in plot_data.axes.get_lines():
             line.remove()
             del line
-        for patch in plot_data.axes.patches:
-            patch.remove()
-            del patch
-        for patch in plot_data.axes.patches:
+        for patch in reversed(plot_data.axes.patches):
             patch.remove()
             del patch
         plot_data.list_points = []
@@ -2102,14 +2098,14 @@ class Data:
                 self.linecut_window.title = ''
             elif self.orientation == 'circular':
                 x0, y0 = self.list_points[0].x, self.list_points[0].y
-                x1, y1 = self.list_points[1].x, self.list_points[1].y
+                x1, y1 = self.list_points[1].x, self.list_points[2].y
                                 
                 l_x, l_y = self.processed_data[0].shape
                 x_min = np.amin(self.processed_data[0][:,0])
                 x_max = np.amax(self.processed_data[0][:,0])
                 y_min = np.amin(self.processed_data[1][0,:])
                 y_max = np.amax(self.processed_data[1][0,:])
-                    
+                
                 i_x0 = (l_x-1)*(x0-x_min)/(x_max-x_min)
                 i_y0 = (l_y-1)*(y0-y_min)/(y_max-y_min)
                 i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
@@ -2119,18 +2115,15 @@ class Data:
                 
                 theta = np.linspace(0, 2*np.pi, n)
                 
-                i_x_circ = i_x0+i_x1*np.cos(theta) 
-                i_y_circ = i_y0+i_y1*np.sin(theta)
+                i_x_circ = i_x0+(i_x1-i_x0)*np.cos(theta) 
+                i_y_circ = i_y0+(i_y1-i_y0)*np.sin(theta)
                 
                 y = map_coordinates(self.processed_data[-1], np.vstack((i_x_circ, i_y_circ)))
                 x = theta
                
-                self.linecut_window.xlabel = self.settings['xlabel']
+                self.linecut_window.xlabel = 'Angle (rad)'
                 self.linecut_window.zlabel = ''
                 self.linecut_window.title = ''
-                x_ = x0 + x1*np.cos(theta)
-                y_ = y0 + y1*np.sin(theta)
-                self.axes.plot(x_,y_,'r.')
 
             self.linecut_window.ylabel = self.settings['clabel']
             self.linecut_window.draw_plot(x, y)
@@ -2532,11 +2525,12 @@ class DraggablePoint:
             line_y = [self.parent.list_points[0].y, self.y]
             self.line = Line2D(line_x, line_y, color=self.parent.settings['linecolor'], alpha=1.0, linestyle='dashed', linewidth=1)
             self.axes.add_line(self.line)
-#        if self.parent.list_points and self.draw_circle:
-#            x0, y0 = self.parent.list_points[0].x, self.parent.list_points[0].y
-#            x1, y1 = self.x, self.y # TODO
-#            self.circle = patches.Ellipse((x0, y0), 2*xr, 2*yr, fc='none', alpha=None, edgecolor='k')
-#            self.axes.add_patch(self.circle)
+        if len(self.parent.list_points) > 1 and self.draw_circle:
+            x0, y0 = self.parent.list_points[0].x, self.parent.list_points[0].y
+            x1, y1 = self.parent.list_points[1].x, self.y
+            self.circle = patches.Ellipse((x0, y0), 2*(x1-x0), 2*(y1-y0), fc='none', alpha=None, 
+                                          linestyle='dashed', linewidth=1, edgecolor='k')
+            self.axes.add_patch(self.circle)
 
     def connect(self):
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
@@ -2558,6 +2552,11 @@ class DraggablePoint:
                 self.line.set_animated(True)
             else:
                 self.parent.list_points[1].line.set_animated(True)
+        if len(self.parent.list_points) > 2 and self.draw_circle:
+            if self == self.parent.list_points[2]:
+                self.circle.set_animated(True)
+            else:
+                self.parent.list_points[2].circle.set_animated(True)
         canvas.draw()
         self.background = canvas.copy_from_bbox(self.point.axes.bbox)
         axes.draw_artist(self.point)
@@ -2571,6 +2570,11 @@ class DraggablePoint:
         self.point.center, xpress, ypress = self.press
         dx = event.xdata - xpress
         dy = event.ydata - ypress
+        if self.draw_circle:
+            if self == self.parent.list_points[1]:
+                dy = 0
+            elif self == self.parent.list_points[2]:
+                dx = 0
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
         canvas = self.point.figure.canvas
         axes = self.point.axes
@@ -2582,6 +2586,12 @@ class DraggablePoint:
             else:
                 self.parent.list_points[1].line.set_animated(True)
                 axes.draw_artist(self.parent.list_points[1].line)
+        if len(self.parent.list_points) > 2 and self.draw_circle:
+            if self == self.parent.list_points[2]:
+                axes.draw_artist(self.circle)
+            else:
+                self.parent.list_points[2].circle.set_animated(True)
+                axes.draw_artist(self.parent.list_points[2].circle)
         self.x = self.point.center[0]
         self.y = self.point.center[1]
         if len(self.parent.list_points) > 1 and self.draw_line:
@@ -2592,8 +2602,14 @@ class DraggablePoint:
             else:
                 line_x = [self.x, self.parent.list_points[1].x]
                 line_y = [self.y, self.parent.list_points[1].y]
-    
                 self.parent.list_points[1].line.set_data(line_x, line_y)
+        elif len(self.parent.list_points) > 2 and self.draw_circle:
+            if self == self.parent.list_points[2]:
+                self.circle.height = 2*(self.y-self.parent.list_points[0].y)
+            elif self == self.parent.list_points[1]:
+                self.parent.list_points[2].circle.width = 2*(self.x-self.parent.list_points[0].x)
+            else:
+                self.parent.list_points[2].circle.set_center((self.x, self.y))
         canvas.blit(axes.bbox)
 
 
@@ -2608,6 +2624,19 @@ class DraggablePoint:
                 self.line.set_animated(False)
             else:
                 self.parent.list_points[1].line.set_animated(False)
+        if len(self.parent.list_points) > 2 and self.draw_circle:
+            if self == self.parent.list_points[2]:
+                self.circle.set_animated(False)
+            else:
+                self.parent.list_points[2].circle.set_animated(False)
+            if self == self.parent.list_points[0]:
+                circle = self.parent.list_points[2].circle
+                self.parent.list_points[1].point.center = (circle.center[0]+0.5*circle.width, circle.center[1])
+                self.parent.list_points[2].point.center = (circle.center[0],circle.center[1]+0.5*circle.height)
+                self.parent.list_points[1].x = self.parent.list_points[1].point.center[0]
+                self.parent.list_points[1].y = self.parent.list_points[1].point.center[1]
+                self.parent.list_points[2].x = self.parent.list_points[2].point.center[0]
+                self.parent.list_points[2].y = self.parent.list_points[2].point.center[1]
         self.background = None
         self.point.figure.canvas.draw()
         self.x = self.point.center[0]
