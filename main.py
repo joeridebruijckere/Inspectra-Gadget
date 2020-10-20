@@ -8,7 +8,11 @@ Last updated on Oct 20 2020
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
-import sys, os, copy, json, io
+import sys
+import os
+import copy
+import json
+import io
 from stat import ST_CTIME
 import numpy as np
 from scipy.interpolate import griddata
@@ -26,12 +30,12 @@ import matplotlib.patches as patches
 try: # lmfit is used for fitting the evolution of the properties of multiple peaks 
     from lmfit.models import LorentzianModel, GaussianModel, ConstantModel
     lmfit_imported = True
-except:
+except ModuleNotFoundError:
     lmfit_imported = False
 try: # used for single peak fitting
     from scipy.signal import find_peaks
     find_peaks_imported = True
-except:
+except ModuleNotFoundError:
     find_peaks_imported = False
 from collections import OrderedDict
 from textwrap import wrap
@@ -39,7 +43,7 @@ from textwrap import wrap
 try:
     import qcodes as qc
     qcodes_imported = True
-except:
+except ModuleNotFoundError:
     qcodes_imported = False
 
 import design
@@ -1009,8 +1013,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             table.setCellWidget(row, 1, property_box)
             table.setItem(row, 2, setting_item_1)
             table.setItem(row, 3, setting_item_2)
-            table.item(row, 2).setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            table.item(row, 3).setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            table.item(row, 2).setTextAlignment(int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter))
+            table.item(row, 3).setTextAlignment(int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter))
             table.setCurrentCell(row, 0)
             table.itemChanged.connect(self.filters_table_edited)
     
@@ -1146,7 +1150,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     filepaths.append((os.stat(filepath)[ST_CTIME],filepath))
         filepaths.sort(key=lambda tup: tup[0])
         for creation_time, filepath in filepaths:
-            print('Open', filepath, creation_time)
+            print('Open', filepath)
             self.add_file(filepath)
         last_item = self.file_list.item(self.file_list.count()-1)
         self.file_list.setCurrentItem(last_item)
@@ -1659,7 +1663,7 @@ class Data:
             else:
                 self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
                 
-        elif isinstance(data, qc.dataset.data_set.DataSet): # for QCoDeS databases         
+        elif qcodes_imported and isinstance(data, qc.dataset.data_set.DataSet): # for QCoDeS databases         
             self.npy_file = False
             self.dataset = data
             self.view_settings = {
