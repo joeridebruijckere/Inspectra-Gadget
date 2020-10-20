@@ -40,7 +40,7 @@
               </size>
              </property>
              <property name="text">
-              <string>Up</string>
+              <string>Move Up</string>
              </property>
             </widget>
            </item>
@@ -63,7 +63,7 @@
               </size>
              </property>
              <property name="text">
-              <string>Down</string>
+              <string>Move Down</string>
              </property>
             </widget>
            </item>
@@ -323,7 +323,7 @@
               </size>
              </property>
              <property name="text">
-              <string>Up</string>
+              <string>Move Up</string>
              </property>
             </widget>
            </item>
@@ -379,7 +379,7 @@
               </size>
              </property>
              <property name="text">
-              <string>Down</string>
+              <string>Move Down</string>
              </property>
             </widget>
            </item>
@@ -443,6 +443,46 @@
     </item>
     <item>
      <layout class="QVBoxLayout" name="vertical_layout">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <item>
+         <spacer name="horizontalSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="previous_button">
+          <property name="text">
+           <string>Previous</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="next_button">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Next</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
       <item>
        <layout class="QGridLayout" name="graph_layout"/>
       </item>
@@ -633,7 +673,7 @@
      <x>0</x>
      <y>0</y>
      <width>1520</width>
-     <height>26</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_auto_refresh">
@@ -651,6 +691,7 @@
     </property>
     <addaction name="action_current_file"/>
     <addaction name="action_all_files"/>
+    <addaction name="action_checked_files"/>
     <addaction name="action_filters"/>
    </widget>
    <widget class="QMenu" name="menu_merge_data">
@@ -678,7 +719,10 @@
     <property name="title">
      <string>Apply Preset</string>
     </property>
+    <addaction name="action_preset_0"/>
     <addaction name="action_preset_1"/>
+    <addaction name="action_preset_2"/>
+    <addaction name="action_preset_3"/>
    </widget>
    <addaction name="menu_save_image"/>
    <addaction name="menu_save_session"/>
@@ -852,9 +896,29 @@
     <string>Save Opened Files as PDF...</string>
    </property>
   </action>
+  <action name="action_preset_0">
+   <property name="text">
+    <string>Preset 0...</string>
+   </property>
+  </action>
   <action name="action_preset_1">
    <property name="text">
     <string>Preset 1...</string>
+   </property>
+  </action>
+  <action name="action_preset_2">
+   <property name="text">
+    <string>Preset 2...</string>
+   </property>
+  </action>
+  <action name="action_preset_3">
+   <property name="text">
+    <string>Preset 3...</string>
+   </property>
+  </action>
+  <action name="action_checked_files">
+   <property name="text">
+    <string>Checked Files...</string>
    </property>
   </action>
  </widget>
