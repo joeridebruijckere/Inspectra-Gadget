@@ -84,8 +84,10 @@ DEFAULT_CHANNEL = 'lockin_curr/X'
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 DEFAULT_VALUE_RCFILTER_CORRECT = False # If True: apply rc-filter correction by default upon loading data
 DEFAULT_RC_FILTER = 8240 # Default resistance rc-filter(s)
-DEFAULT_SHOW_METADATANAME = False
-SHOW_SETTINGS_ON_CANVAS = False
+DEFAULT_SHOW_METADATANAME = True
+SHOW_SETTINGS_ON_CANVAS = True
+CHANNELS_TO_SHOW = ['source', 'g1', 'g1f', 'g2', 'g2f', 'g3', 'g3f', 
+                    'g4', 'g4f', 'g7', 'g7f', 'bg', 'Bx', 'Bz', 'T']
 
 # QCoDeS default settings
 DEFAULT_INDEX_DEPENDENT_PARAMETER = 0 # upon opening a dataset the dependent parameter with this index will be plotted
@@ -157,6 +159,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.init_filters()
         self.init_connections()
         self.init_canvas()
+        self.linked_folder = None
+        self.linked_files = []
         
     def init_plot_settings(self):
         #font_sizes = ['xx-small','x-small','small','medium','large','x-large','xx-large']
@@ -313,6 +317,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_preset_2.triggered.connect(lambda: self.apply_preset(2))
         self.action_preset_3.triggered.connect(lambda: self.apply_preset(3))
         self.action_refresh_stop.setEnabled(False)
+        self.action_link_to_folder.triggered.connect(lambda: self.update_link_to_folder(new_folder=True))
         self.refresh_file_button.clicked.connect(self.refresh_plot)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
         self.down_file_button.clicked.connect(lambda: self.move_file('down'))
@@ -491,6 +496,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def refresh_plot(self):
         if PRINT_FUNCTION_CALLS:
             print('refresh_plot')
+        if self.linked_folder:
+            self.update_link_to_folder(new_folder=False)
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
@@ -1159,6 +1166,29 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.show_current_all()
         self.file_list.itemChanged.connect(self.file_checked)
         last_item.setCheckState(QtCore.Qt.Checked)
+        
+    def update_link_to_folder(self, new_folder=True):
+        if new_folder:
+            self.linked_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
+        if self.linked_folder:
+            new_files = []
+            for subdir, dirs, files in os.walk(self.linked_folder):
+                for file in files:
+                    filename, file_extension = os.path.splitext(file)
+                    if file_extension == '.dat':
+                        filepath = os.path.join(subdir, file)
+                        if filepath not in self.linked_files:
+                            new_files.append((os.stat(filepath)[ST_CTIME],filepath))
+            if new_files:
+                new_files.sort(key=lambda tup: tup[0])
+                for new_file in new_files:
+                    try:
+                        print('Open', new_file[1])
+                        self.add_file(new_file[1])
+                        self.linked_files.append(new_file[1])
+                    except:
+                        print('Could not open', new_file[1])
+                        continue
     
     def save_files_as(self, extension):
         if PRINT_FUNCTION_CALLS:
@@ -1667,10 +1697,11 @@ class Data:
             self.npy_file = False
             self.dataset = data
             self.view_settings = {
-                    'Minimum': 0, 'Maximum': 1, 'Midpoint': 0.5,
+                    'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
                     'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
                     'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
                     'Locked': 0, 'MidLock': 0, 'Reverse': 0}            
+        
         else:
             self.npy_file = False
             self.load_data(filepath)
@@ -1789,7 +1820,7 @@ class Data:
         
         self.settings_string = ''
         if SHOW_SETTINGS_ON_CANVAS:
-            channels_to_show = ['source', 'g1', 'g2', 'g3', 'g4', 'g4f', 'g5', 'g6', 'g6f', 'bg', 'Bx', 'Bz', 'T']
+            channels_to_show = CHANNELS_TO_SHOW
             meta_channels = self.meta_data['setup']['channels']
             for instrument in self.meta_data['register']['instruments']:
                 if instrument['name'] == 'dac':
@@ -1798,14 +1829,18 @@ class Data:
             for channel in channels_to_show:
                 try:
                     if channel in meta_channels:
-                        for dac_channel in self.meta_data['register']['channels']:
-                            if dac_channel['name'] == channel: 
-                                if dac_channel['instrument'] == 'dac':  
-                                    value = dac['current_values'][dac_channel['channel_id']]
+                        for register_channel in self.meta_data['register']['channels']:
+                            if register_channel['name'] == channel: 
+                                if register_channel['instrument'] == 'dac':  
+                                    value = dac['current_values'][register_channel['channel_id']]
                                     self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
                                     break
-                                elif dac_channel['instrument'] == 'smua' or dac_channel['instrument'] == 'smub':
-                                    pass # to be added in meta files
+                                elif register_channel['instrument'] == 'smua':
+                                    for instrument in self.meta_data['register']['instruments']:
+                                        if instrument['name'] == 'smua' and 'current_values' in instrument.keys():
+                                            value = instrument['current_values']['v']
+                                            self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                            break
                         else:
                             if channel == 'Bx' or channel == 'Bz':
                                 for instrument in self.meta_data['register']['instruments']:
