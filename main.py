@@ -57,9 +57,10 @@ DEFAULT_PLOT_SETTINGS['title'] = '<filename>'
 DEFAULT_PLOT_SETTINGS['xlabel'] = ''
 DEFAULT_PLOT_SETTINGS['ylabel'] = ''
 DEFAULT_PLOT_SETTINGS['clabel'] = ''
-DEFAULT_PLOT_SETTINGS['titlesize'] = '18'
-DEFAULT_PLOT_SETTINGS['labelsize'] = '18' 
+DEFAULT_PLOT_SETTINGS['titlesize'] = '16'
+DEFAULT_PLOT_SETTINGS['labelsize'] = '16' 
 DEFAULT_PLOT_SETTINGS['ticksize'] = '16'
+DEFAULT_PLOT_SETTINGS['linewidth'] = '1'
 DEFAULT_PLOT_SETTINGS['spinewidth'] = '0.8'
 DEFAULT_PLOT_SETTINGS['columns'] = '0,1,2'
 DEFAULT_PLOT_SETTINGS['colorbar'] = 'True'
@@ -74,10 +75,16 @@ DEFAULT_PLOT_SETTINGS['transparent'] = 'False'
 DEFAULT_PLOT_SETTINGS['rc-filter'] = ''
 
 # List of custom presets
-PRESETS = [{'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5'},
-           {'title': '', 'labelsize': '8', 'ticksize': '8', 'spinewidth': '0.5'},
-           {'title': '', 'labelsize': '8', 'ticksize': '8', 'spinewidth': '0.5'},
-           {'title': '', 'labelsize': '8', 'ticksize': '8', 'spinewidth': '0.5'}]
+PRESETS = [{'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5',
+            'titlesize': '9',
+            'canvas_bounds': (0.425,0.4,0.575,0.6), # (left, bottom, right, top)
+            'show_meta_settings': False},
+           {'title': '<metadataname>', 'labelsize': '16', 'ticksize': '16', 'spinewidth': '0.8',
+            'titlesize': '16',
+            'canvas_bounds': (0.425,0.4,0.575,0.6), # (left, bottom, right, top)
+            'show_meta_settings': True},
+           {'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5'},
+           {'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5'}]
 
 # Default settings meta.json files (Triton 6 data)
 DEFAULT_CHANNEL = 'lockin_curr/X'
@@ -153,6 +160,7 @@ for cmap_type in cmaps.copy():
 class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def __init__(self):
         super(self.__class__, self).__init__()
+        self.window_title = 'Inspectra Gadget'
         self.setupUi(self)
         self.init_plot_settings()
         self.init_view_settings()
@@ -167,9 +175,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         font_sizes = ['8', '9', '10', '12', '18', '24']
         self.settings_menu_list = OrderedDict()
         self.settings_menu_list['title'] = ['<filename>','<metadataname>']
-        self.settings_menu_list['xlabel'] = ['Gate Voltage (V)', '$V_{\mathrm{g}}$ (V)', 
-                                             'Magnetic Field (T)', '$B$ (T)', '$V$ (mV)', 'Angle (degrees)']
-        self.settings_menu_list['ylabel'] = ['Bias Voltage (mV)', '$V$ (mV)', 'Gate Voltage (V)', '$V_{\mathrm{g}}$ (V)', 
+        self.settings_menu_list['xlabel'] = ['Gate voltage (V)', '$V_{\mathrm{g}}$ (V)',
+                                             'Bias voltage (mV)', '$V$ (mV)',
+                                             'Magnetic Field (T)', '$B$ (T)', 'Angle (degrees)']
+        self.settings_menu_list['ylabel'] = ['Bias voltage (mV)', '$V$ (mV)', 'Gate voltage (V)', '$V_{\mathrm{g}}$ (V)', 
                                              'd$I$/d$V$ (μS)', 'd$I$/d$V$ $(e^{2}/h)$', 'Angle (degrees)', 'Temperature (mK)']
         self.settings_menu_list['clabel'] = ['$I$ (nA)', '$I$ (a.u.)', 'Current (nA)', 
                                              'd$I$/d$V$ (μS)', 'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 
@@ -336,6 +345,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                              (3,4),(3,4),(3,4),(3,4),(4,4),(4,4),(4,4),(4,4),
                              (4,5),(4,5),(4,5),(4,5),(4,5),(5,5),(5,5),(5,5),
                              (5,5)]
+        if SHOW_SETTINGS_ON_CANVAS:
+            self.figure.subplots_adjust(0.17,0.2,0.8,0.85)
 
     def open_files(self, filenames=None):
         if PRINT_FUNCTION_CALLS:
@@ -379,12 +390,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             if SHOW_ERRORS:
                 raise
             
-    def add_file(self, file, data=None):
+    def add_file(self, file, data=None, do_load_data=True):
         if PRINT_FUNCTION_CALLS:
             print('add_file')
         item = QtWidgets.QListWidgetItem()
         try:
-            item.setData(QtCore.Qt.UserRole, Data(filepath=file, canvas=self.canvas, data=data))
+            item.setData(QtCore.Qt.UserRole, 
+                         Data(filepath=file, canvas=self.canvas, 
+                              data=data, do_load_data=do_load_data))
             item.setText(os.path.basename(file))
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
             item.setCheckState(QtCore.Qt.Unchecked)
@@ -406,11 +419,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             elif which == 'all':
                 items = [self.file_list.item(n) for n in range(self.file_list.count())]
             for item in items:
+                if item.data(QtCore.Qt.UserRole).filepath in self.linked_files:
+                    self.linked_files.remove(item.data(QtCore.Qt.UserRole).filepath)
                 if item.checkState() == 2:
                     update_plots = True
                 index = self.file_list.row(item)
                 self.file_list.takeItem(index)
                 del item
+
         self.show_current_all()
         if update_plots: 
             self.update_plots()
@@ -490,6 +506,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                 data.update_multiple_linecuts()
                 except:
                     print('Could not open', data.filepath)
+                    raise
         self.show_current_all()
         self.canvas.draw()
           
@@ -538,10 +555,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
         self.action_refresh_stop.setEnabled(True)
         self.auto_refresh_timer.start()
-        self.setWindowTitle('InSpectra Gadget - Auto-Refreshing Enabled')
+        self.setWindowTitle(self.window_title+' - Auto-Refreshing Enabled')
         
     def auto_refresh_call(self):
-        self.setWindowTitle('InSpectra Gadget - Auto-Refreshing Enabled (Auto-Refreshing...)')
+        self.setWindowTitle(self.window_title+' - Auto-Refreshing Enabled (Auto-Refreshing...)')
         file_list = self.file_list
         checked_items = [file_list.item(index) for index in range(file_list.count()) 
                          if file_list.item(index).checkState() == 2]
@@ -550,14 +567,16 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 data = item.data(QtCore.Qt.UserRole)
                 data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
             self.update_plots()
-        self.setWindowTitle('InSpectra Gadget - Auto-Refreshing Enabled')
+        if self.linked_folder:
+            self.update_link_to_folder(new_folder=False)
+        self.setWindowTitle(self.window_title+' - Auto-Refreshing Enabled')
             
     def stop_auto_refresh(self):
         if PRINT_FUNCTION_CALLS:
             print('stop_auto_refresh')
         self.auto_refresh_timer.stop()
         self.action_refresh_stop.setEnabled(False)
-        self.setWindowTitle('InSpectra Gadget')
+        self.setWindowTitle(self.window_title)
         
     def move_file(self, direction):
         if PRINT_FUNCTION_CALLS:
@@ -943,7 +962,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if column == 1:
             setting_name = table.item(row, 0).text()
             menu = QtWidgets.QMenu(self)
-            if self.settings_menu_list[setting_name]:
+            if setting_name in self.settings_menu_list.keys():
                 for entry in self.settings_menu_list[setting_name]:
                     action = QtWidgets.QAction(entry, self)
                     menu.addAction(action)
@@ -1171,6 +1190,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if new_folder:
             self.linked_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
         if self.linked_folder:
+            self.window_title = 'Inspectra Gadget - Linked to folder '+self.linked_folder
+            self.setWindowTitle(self.window_title)
             new_files = []
             for subdir, dirs, files in os.walk(self.linked_folder):
                 for file in files:
@@ -1184,7 +1205,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 for new_file in new_files:
                     try:
                         print('Open', new_file[1])
-                        self.add_file(new_file[1])
+                        self.add_file(new_file[1], do_load_data=False)
                         self.linked_files.append(new_file[1])
                     except:
                         print('Could not open', new_file[1])
@@ -1586,6 +1607,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('keyPressEvent', event.key(), event.modifiers())  
         if event.key() == QtCore.Qt.Key_C and event.modifiers() == QtCore.Qt.ControlModifier:
             self.copy_canvas_to_clipboard()
+        elif event.key() == QtCore.Qt.Key_T and event.modifiers() == QtCore.Qt.ControlModifier:
+            if not self.action_refresh_stop.isEnabled():
+                self.start_auto_refresh(1)
+                print('Start live tracking...')
+            else:
+                self.stop_auto_refresh() # todo: auto stop?
+                print('Stop live tracking...')
+            
                
     def merge_files(self, raw_data=True):
         if PRINT_FUNCTION_CALLS:
@@ -1648,17 +1677,25 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             for item in checked_items:
                 data = item.data(QtCore.Qt.UserRole)
                 for preset_item in PRESETS[preset_number].items():
-                    data.settings[preset_item[0]] = preset_item[1]
-                data.apply_plot_settings()
-                self.show_current_plot_settings()
-                self.canvas.draw()
+                    if preset_item[0] in data.settings.keys():
+                        data.settings[preset_item[0]] = preset_item[1]
+                    elif preset_item[0] == 'canvas_bounds':
+                        b = preset_item[1] # (left, bottom, right, top)
+                        data.figure.subplots_adjust(b[0], b[1], b[2], b[3])
+                    elif preset_item[0] == 'show_meta_settings':
+                        data.show_settings = preset_item[1]
+            self.update_plots()
+                #data.apply_plot_settings()
+                #self.show_current_plot_settings()
+                #self.canvas.draw()
     
 class Data:
-    def __init__(self, filepath, canvas, data=None):
+    def __init__(self, filepath, canvas, data=None, do_load_data=True):
         self.filepath = filepath
         self.filename = os.path.basename(filepath)
         self.canvas = canvas
         self.default_settings = DEFAULT_PLOT_SETTINGS
+        self.show_settings = SHOW_SETTINGS_ON_CANVAS
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
         self.settings = self.default_settings.copy()
@@ -1673,6 +1710,8 @@ class Data:
         self.rcfilter_correct = False
         self.four_terminal = False
         self.dataset = None
+        self.npy_file = False
+        self.qcodes_file = False
         
      
         if isinstance(data, dict): # for .npy files, saved using the "Save Session" menu
@@ -1693,35 +1732,47 @@ class Data:
             else:
                 self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
                 
-        elif qcodes_imported and isinstance(data, qc.dataset.data_set.DataSet): # for QCoDeS databases         
-            self.npy_file = False
+        elif qcodes_imported and isinstance(data, qc.dataset.data_set.DataSet): # for QCoDeS databases
+            self.qcodes_file = True         
             self.dataset = data
             self.view_settings = {
                     'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
                     'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
                     'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
-                    'Locked': 0, 'MidLock': 0, 'Reverse': 0}            
-        
+                    'Locked': 0, 'MidLock': 0, 'Reverse': 0} 
+                       
         else:
-            self.npy_file = False
-            self.load_data(filepath)
+            if do_load_data:
+                self.load_data()
             meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
             if self.filename == 'data.dat' and meta_file_exists: # Copenhagen meta data file
                 self.interpret_meta_file()
-                self.processed_to_raw()
-                self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
-                self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
+                if do_load_data:
+                    self.processed_to_raw()
+                    self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
+                    self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
+                else:
+                    self.meta_unit_conversion()
             else:
-                self.processed_to_raw()
-                self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
-            min_map = np.min(self.processed_data[-1])
-            max_map = np.max(self.processed_data[-1])
-            mid_map = 0.5*(min_map+max_map)
-            self.view_settings = {
-                    'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
+                if do_load_data:
+                    self.processed_to_raw()
+                    self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
+            if do_load_data:
+                min_map = np.min(self.processed_data[-1])
+                max_map = np.max(self.processed_data[-1])
+                mid_map = 0.5*(min_map+max_map)
+                self.view_settings = {
+                        'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
+                        'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
+                        'Norm': MidpointNormalize(vmin=min_map, vmax=max_map, midpoint=mid_map),
+                        'Locked': 0, 'MidLock': 0, 'Reverse': 0}
+            else:
+                self.view_settings = {
+                    'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
                     'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
-                    'Norm': MidpointNormalize(vmin=min_map, vmax=max_map, midpoint=mid_map),
-                    'Locked': 0, 'MidLock': 0, 'Reverse': 0}
+                    'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
+                    'Locked': 0, 'MidLock': 0, 'Reverse': 0} 
+                
         
         self.selected_indices = [0, 0]
         self.figure = None
@@ -1737,11 +1788,11 @@ class Data:
         self.index_dependent_parameter = DEFAULT_INDEX_DEPENDENT_PARAMETER
         self.dependent_parameters = None
         
-    def load_data(self, location=None):
+    def load_data(self):
         if PRINT_FUNCTION_CALLS:
             print('load_data')
-        if location:
-            column_data = np.genfromtxt(location, delimiter=self.settings['delimiter'])
+        if not self.qcodes_file:
+            column_data = np.genfromtxt(self.filepath, delimiter=self.settings['delimiter'])
         else:
             self.dependent_parameters = [p.name for p in self.dataset.dependent_parameters]
             dependent_par = self.dependent_parameters[self.index_dependent_parameter]
@@ -1819,7 +1870,7 @@ class Data:
             self.settings['title'] = '<metadataname>'
         
         self.settings_string = ''
-        if SHOW_SETTINGS_ON_CANVAS:
+        if self.show_settings:
             channels_to_show = CHANNELS_TO_SHOW
             meta_channels = self.meta_data['setup']['channels']
             for instrument in self.meta_data['register']['instruments']:
@@ -1924,9 +1975,9 @@ class Data:
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
                 if self.columns.index(source_index) == 0:
-                    self.settings['xlabel'] = 'Bias Voltage (mV)'
+                    self.settings['xlabel'] = 'Bias voltage (mV)'
                 elif self.columns.index(source_index) == 1:
-                    self.settings['ylabel'] = 'Bias Voltage (mV)'
+                    self.settings['ylabel'] = 'Bias voltage (mV)'
                 if source_index == 0:
                     self.measurement_bounds = [bound_from/(source_divider*SOURCE_UNIT),
                                                bound_to/(source_divider*SOURCE_UNIT)]
@@ -1963,9 +2014,9 @@ class Data:
                 self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
                                      'Setting 1': coarse_offset, 'Setting 2': '', 'Checked': 2})
                 if self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate Voltage '+gate[1:]+' (V)'
+                    self.settings['xlabel'] = 'Gate voltage '+gate[1:]+' (V)'
                 elif self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate Voltage '+gate[1:]+' (V)'
+                    self.settings['ylabel'] = 'Gate voltage '+gate[1:]+' (V)'
                 if gate_index == 0:   
                     self.measurement_bounds = [bound_from/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac,
                                                bound_to/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac]
@@ -1975,9 +2026,9 @@ class Data:
             gate_index = self.channels.index(gate)
             if gate_index in self.columns:
                 if self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate Voltage '+gate[1]+' (V)'
+                    self.settings['xlabel'] = 'Gate voltage '+gate[1]+' (V)'
                 elif self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate Voltage '+gate[1]+' (V)'  
+                    self.settings['ylabel'] = 'Gate voltage '+gate[1]+' (V)'  
                 if gate_index == 0:   
                     self.measurement_bounds = [bound_from, bound_to]
             
@@ -1994,11 +2045,11 @@ class Data:
                     self.filters.append({'Name': 'Divide', 'Method': axis, 
                                          'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
                 if self.columns.index(curr_index) == 0:
-                    self.settings['xlabel'] = 'DC Current (nA)'
+                    self.settings['xlabel'] = '$I$ (nA)'
                 elif self.columns.index(curr_index) == 1:
-                    self.settings['ylabel'] = 'DC Current (nA)'
+                    self.settings['ylabel'] = '$I$ (nA)'
                 elif self.columns.index(curr_index) == 2:
-                    self.settings['clabel'] = 'DC Current (nA)'
+                    self.settings['clabel'] = '$I$ (nA)'
         
         if 'lockin_curr/X' in self.channels:
             lockin_index = self.channels.index('lockin_curr/X')
@@ -2058,6 +2109,14 @@ class Data:
         else:
             self.four_terminal = False
         
+        if 'bg' in self.channels:
+            bg_index = self.channels.index('bg')
+            if bg_index in self.columns:
+                if self.columns.index(bg_index) == 0:
+                    self.settings['xlabel'] = 'Backgate voltage (V)'
+                elif self.columns.index(bg_index) == 1:
+                    self.settings['ylabel'] = 'Backgate voltage (V)'
+        
         if 'Bx' in self.channels:
             if self.channels.index('Bx') == 0:  
                 self.measurement_bounds = [bound_from, bound_to]
@@ -2079,10 +2138,7 @@ class Data:
         if PRINT_FUNCTION_CALLS:
             print('refresh_data')
         if not self.npy_file: # if data is not directly from a npy file
-            if self.dataset: # if QCoDeS data
-                self.load_data()
-            else: # if other data file
-                self.load_data(self.filepath)            
+            self.load_data()           
         self.apply_all_filters(update_color_limits, refresh_unit_conversion)        
     
     def add_plot(self):
@@ -2094,17 +2150,20 @@ class Data:
             cmap_str = cmap_str+'_r'
         cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
         cmap.set_bad(self.settings['maskcolor'])
-        self.image = self.axes.pcolormesh(data[0], data[1], data[2], shading='auto',
-                                  norm=self.view_settings['Norm'], cmap=cmap,
-                                  rasterized=self.settings['rasterized'])
+        self.image = self.axes.pcolormesh(data[0], data[1], data[2], shading='auto', 
+                                          norm=self.view_settings['Norm'], cmap=cmap,
+                                          rasterized=self.settings['rasterized'])
         if self.settings['colorbar'] == 'True':
             self.cbar = self.figure.colorbar(self.image, orientation='vertical')
         if self.draw_full_range:        
             self.axes.set_xlim(left=min(self.measurement_bounds), 
                                right=max(self.measurement_bounds))
-        self.cursor = Cursor(self.axes, useblit=True, color=self.settings['linecolor'], linewidth=0.5)
-        if SHOW_SETTINGS_ON_CANVAS:
-            self.axes.text(1.2, 0.4, self.settings_string, fontsize=14, transform=self.axes.transAxes)
+        self.cursor = Cursor(self.axes, useblit=True, 
+                             color=self.settings['linecolor'], linewidth=0.5)
+        if self.show_settings:
+            self.axes.text(1.2, 0, self.settings_string, 
+                           fontsize=self.settings['ticksize'], 
+                           transform=self.axes.transAxes)
         self.apply_plot_settings()
 
     def add_plot_2d(self):
@@ -2115,9 +2174,12 @@ class Data:
         if self.view_settings['Reverse']:
             cmap = cmap+'_r'
         self.image = self.axes.plot(data[0], data[1], color=cm.get_cmap(cmap)(0.5))
-        self.cursor = Cursor(self.axes, useblit=True, color=self.settings['linecolor'], linewidth=0.5)
-        if SHOW_SETTINGS_ON_CANVAS:
-            self.axes.text(1.02, 0.4, self.settings_string, fontsize=14, transform=self.axes.transAxes)
+        self.cursor = Cursor(self.axes, useblit=True, 
+                             color=self.settings['linecolor'], linewidth=0.5)
+        if self.show_settings:
+            self.axes.text(1.02, 0, self.settings_string, 
+                           fontsize=self.settings['ticksize'], 
+                           transform=self.axes.transAxes)
         self.apply_plot_settings()        
         
     def reset_view_settings(self, overrule=False):
@@ -2166,9 +2228,11 @@ class Data:
         settings = self.settings
         self.axes.set_xlabel(settings['xlabel'], size=settings['labelsize'])
         self.axes.set_ylabel(settings['ylabel'], size=settings['labelsize'])
+        if isinstance(self.image, list):
+            self.image[0].set_linewidth(float(settings['linewidth']))
         for axis in ['top','bottom','left','right']:
             self.axes.spines[axis].set_linewidth(float(self.settings['spinewidth']))
-        self.axes.tick_params(labelsize=settings['ticksize'])
+        self.axes.tick_params(labelsize=settings['ticksize'], width=float(self.settings['spinewidth']))
         if settings['minorticks'] == 'True':    
             self.axes.minorticks_on()
         if settings['title'] == '<filename>':
@@ -2374,6 +2438,7 @@ class LineCutWindow(QtWidgets.QWidget):
         self.multiple = multiple
         self.running = True
         self.resize(600, 600)
+        self.linewidth = self.parent.settings['linewidth']
         self.vertical_layout = QtWidgets.QVBoxLayout()
         self.button_layout = QtWidgets.QHBoxLayout()
         self.figure = Figure(tight_layout={'pad':2})
@@ -2689,7 +2754,7 @@ class LineCutWindow(QtWidgets.QWidget):
         self.x, self.y = x, y
         self.figure.clear()
         self.axes = self.figure.add_subplot(111)
-        self.image = self.axes.plot(x, y, 'C3', linewidth=0.8)
+        self.image = self.axes.plot(x, y, 'C3', linewidth=self.linewidth)
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
         self.apply_plot_settings()
 
@@ -2754,7 +2819,7 @@ class LineCutWindow(QtWidgets.QWidget):
         line_colors = selected_colormap(np.linspace(0.1,0.9,self.number))
         for index in range(self.number):
             self.axes.plot(self.x[index], self.y[index]+index*self.offset, 
-                           color=line_colors[index], linewidth=0.8, 
+                           color=line_colors[index], linewidth=self.linewidth, 
                            label=self.labels[index])
         if self.check_legend.checkState():
             self.axes.legend(title=self.zlabel)
@@ -2765,9 +2830,9 @@ class LineCutWindow(QtWidgets.QWidget):
         if self.multiple:
             for index in range(self.number):
                 self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
-                               'k--', linewidth=0.8)
+                               'k--', linewidth=self.linewidth)
         else:
-            self.axes.plot(self.x, self.y_fit, 'k--', linewidth=0.8)            
+            self.axes.plot(self.x, self.y_fit, 'k--', linewidth=self.linewidth)            
         self.canvas.draw()
     
     def apply_plot_settings(self):
