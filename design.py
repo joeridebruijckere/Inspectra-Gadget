@@ -362,6 +362,8 @@ class Ui_MainWindow(object):
         self.menu_open_folder.setObjectName("menu_open_folder")
         self.menu_apply_preset = QtWidgets.QMenu(self.menu_bar)
         self.menu_apply_preset.setObjectName("menu_apply_preset")
+        self.menuLink = QtWidgets.QMenu(self.menu_bar)
+        self.menuLink.setObjectName("menuLink")
         MainWindow.setMenuBar(self.menu_bar)
         self.actionNew = QtWidgets.QAction(MainWindow)
         self.actionNew.setObjectName("actionNew")
@@ -439,6 +441,8 @@ class Ui_MainWindow(object):
         self.action_preset_3.setObjectName("action_preset_3")
         self.action_checked_files = QtWidgets.QAction(MainWindow)
         self.action_checked_files.setObjectName("action_checked_files")
+        self.action_link_to_folder = QtWidgets.QAction(MainWindow)
+        self.action_link_to_folder.setObjectName("action_link_to_folder")
         self.menu_auto_refresh.addAction(self.action_refresh_30s)
         self.menu_auto_refresh.addAction(self.action_refresh_5m)
         self.menu_auto_refresh.addAction(self.action_refresh_30m)
@@ -457,12 +461,14 @@ class Ui_MainWindow(object):
         self.menu_apply_preset.addAction(self.action_preset_1)
         self.menu_apply_preset.addAction(self.action_preset_2)
         self.menu_apply_preset.addAction(self.action_preset_3)
+        self.menuLink.addAction(self.action_link_to_folder)
         self.menu_bar.addAction(self.menu_save_image.menuAction())
         self.menu_bar.addAction(self.menu_save_session.menuAction())
         self.menu_bar.addAction(self.menu_auto_refresh.menuAction())
         self.menu_bar.addAction(self.menu_merge_data.menuAction())
         self.menu_bar.addAction(self.menu_open_folder.menuAction())
         self.menu_bar.addAction(self.menu_apply_preset.menuAction())
+        self.menu_bar.addAction(self.menuLink.menuAction())
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
@@ -505,6 +511,7 @@ class Ui_MainWindow(object):
         self.menu_save_image.setTitle(_translate("MainWindow", "Save Image"))
         self.menu_open_folder.setTitle(_translate("MainWindow", "Batch Actions"))
         self.menu_apply_preset.setTitle(_translate("MainWindow", "Apply Preset"))
+        self.menuLink.setTitle(_translate("MainWindow", "Link"))
         self.actionNew.setText(_translate("MainWindow", "New"))
         self.actionNewWindow.setText(_translate("MainWindow", "New Window..."))
         self.actionOpen_File.setText(_translate("MainWindow", "Open File..."))
@@ -543,6 +550,7 @@ class Ui_MainWindow(object):
         self.action_preset_2.setText(_translate("MainWindow", "Preset 2..."))
         self.action_preset_3.setText(_translate("MainWindow", "Preset 3..."))
         self.action_checked_files.setText(_translate("MainWindow", "Checked Files..."))
+        self.action_link_to_folder.setText(_translate("MainWindow", "Link to Folder..."))
 
 
 if __name__ == "__main__":

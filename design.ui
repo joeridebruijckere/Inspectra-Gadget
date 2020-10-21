@@ -724,12 +724,19 @@
     <addaction name="action_preset_2"/>
     <addaction name="action_preset_3"/>
    </widget>
+   <widget class="QMenu" name="menuLink">
+    <property name="title">
+     <string>Link</string>
+    </property>
+    <addaction name="action_link_to_folder"/>
+   </widget>
    <addaction name="menu_save_image"/>
    <addaction name="menu_save_session"/>
    <addaction name="menu_auto_refresh"/>
    <addaction name="menu_merge_data"/>
    <addaction name="menu_open_folder"/>
    <addaction name="menu_apply_preset"/>
+   <addaction name="menuLink"/>
   </widget>
   <action name="actionNew">
    <property name="text">
@@ -919,6 +926,11 @@
   <action name="action_checked_files">
    <property name="text">
     <string>Checked Files...</string>
+   </property>
+  </action>
+  <action name="action_link_to_folder">
+   <property name="text">
+    <string>Link to Folder...</string>
    </property>
   </action>
  </widget>
