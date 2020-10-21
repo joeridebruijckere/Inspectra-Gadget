@@ -1478,7 +1478,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
             self.update_plots()
             self.show_current_all()
-        elif signal.text() in plot_data.dependent_parameters:
+        elif qcodes_imported and signal.text() in plot_data.dependent_parameters:
             plot_data.index_dependent_parameter = plot_data.dependent_parameters.index(signal.text())
             plot_data.refresh_data(update_color_limits=True)
             self.update_plots()
@@ -1582,7 +1582,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.canvas.draw()
             
     def keyPressEvent(self, event):
-        if True: #PRINT_FUNCTION_CALLS:
+        if PRINT_FUNCTION_CALLS:
             print('keyPressEvent', event.key(), event.modifiers())  
         if event.key() == QtCore.Qt.Key_C and event.modifiers() == QtCore.Qt.ControlModifier:
             self.copy_canvas_to_clipboard()
@@ -2384,6 +2384,8 @@ class LineCutWindow(QtWidgets.QWidget):
         self.save_button.clicked.connect(self.save_data)
         self.save_image_button = QtWidgets.QPushButton('Save Image')
         self.save_image_button.clicked.connect(self.save_image)
+        self.copy_image_button = QtWidgets.QPushButton('Copy Image')
+        self.copy_image_button.clicked.connect(self.copy_image)
         self.clear_button = QtWidgets.QPushButton('Clear')
         self.clear_button.clicked.connect(self.clear_lines)
         self.detect_peaks_button = QtWidgets.QPushButton('Detect Peaks')
@@ -2397,6 +2399,7 @@ class LineCutWindow(QtWidgets.QWidget):
         if self.multiple_files == False:
             self.button_layout.addWidget(self.save_button)
         self.button_layout.addWidget(self.save_image_button)
+        self.button_layout.addWidget(self.copy_image_button)
         self.button_layout.addStretch()
         if self.multiple_files == False:
             self.init_fit()
@@ -2803,7 +2806,18 @@ class LineCutWindow(QtWidgets.QWidget):
             print('Save Figure as '+filename+' ...')
             self.figure.savefig(filename)
             print('Saved!')
-            
+    
+    def copy_image(self):
+        self.cursor.horizOn = False
+        self.cursor.vertOn = False            
+        self.canvas.draw()            
+        buf = io.BytesIO()
+        self.figure.savefig(buf, dpi=300, transparent=True, bbox_inches='tight')
+        QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
+        buf.close()
+        self.cursor.horizOn = True
+        self.cursor.vertOn = True                       
+        self.canvas.draw()
             
     def mouse_scroll_canvas(self, event):
         if event.inaxes:
