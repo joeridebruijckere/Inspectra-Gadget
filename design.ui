@@ -449,6 +449,13 @@
          <number>6</number>
         </property>
         <item>
+         <widget class="QLabel" name="remaining_time_label">
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+        <item>
          <spacer name="horizontalSpacer">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
@@ -673,13 +680,14 @@
      <x>0</x>
      <y>0</y>
      <width>1520</width>
-     <height>21</height>
+     <height>26</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_auto_refresh">
     <property name="title">
      <string>Auto Refresh</string>
     </property>
+    <addaction name="action_live_tracking"/>
     <addaction name="action_refresh_30s"/>
     <addaction name="action_refresh_5m"/>
     <addaction name="action_refresh_30m"/>
@@ -729,6 +737,7 @@
      <string>Link</string>
     </property>
     <addaction name="action_link_to_folder"/>
+    <addaction name="action_unlink_folder"/>
    </widget>
    <addaction name="menu_save_image"/>
    <addaction name="menu_save_session"/>
@@ -931,6 +940,16 @@
   <action name="action_link_to_folder">
    <property name="text">
     <string>Link to Folder...</string>
+   </property>
+  </action>
+  <action name="action_unlink_folder">
+   <property name="text">
+    <string>Unlink...</string>
+   </property>
+  </action>
+  <action name="action_live_tracking">
+   <property name="text">
+    <string>Live Tracking...</string>
    </property>
   </action>
  </widget>
