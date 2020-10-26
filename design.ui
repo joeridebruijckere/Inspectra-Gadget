@@ -469,6 +469,20 @@
          </spacer>
         </item>
         <item>
+         <widget class="QPushButton" name="save_image_button">
+          <property name="text">
+           <string>Save Image</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="copy_image_button">
+          <property name="text">
+           <string>Copy Image</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QPushButton" name="previous_button">
           <property name="text">
            <string>Previous</string>
@@ -709,12 +723,6 @@
     <addaction name="action_merge_raw"/>
     <addaction name="action_merge_processed"/>
    </widget>
-   <widget class="QMenu" name="menu_save_image">
-    <property name="title">
-     <string>Save Image</string>
-    </property>
-    <addaction name="action_save_canvas"/>
-   </widget>
    <widget class="QMenu" name="menu_open_folder">
     <property name="title">
      <string>Batch Actions</string>
@@ -739,7 +747,6 @@
     <addaction name="action_link_to_folder"/>
     <addaction name="action_unlink_folder"/>
    </widget>
-   <addaction name="menu_save_image"/>
    <addaction name="menu_save_session"/>
    <addaction name="menu_auto_refresh"/>
    <addaction name="menu_merge_data"/>
