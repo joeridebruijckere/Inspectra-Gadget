@@ -4,11 +4,9 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere
 
-Last updated on Oct 26 2020
+Last updated on Oct 27 2020
 
 """
-
-# TODO: Properly handle files that have not completed the first two sweeps
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
@@ -31,6 +29,7 @@ from matplotlib.widgets import Cursor
 from matplotlib import rcParams
 from matplotlib.lines import Line2D
 import matplotlib.patches as patches
+from cycler import cycler
 try: # lmfit is used for fitting the evolution of the properties of multiple peaks 
     from lmfit.models import LorentzianModel, GaussianModel, ConstantModel
     lmfit_imported = True
@@ -43,7 +42,11 @@ except ModuleNotFoundError:
     find_peaks_imported = False
 from collections import OrderedDict
 from textwrap import wrap
-
+try:
+    import qdarkstyle # pip install qdarkstyle
+    qdarkstyle_imported = True
+except ModuleNotFoundError:
+    qdarkstyle_imported = False
 try:
     import qcodes as qc
     qcodes_imported = True
@@ -53,6 +56,8 @@ except ModuleNotFoundError:
 import design
 import filters
 import fits
+
+DARK_THEME = True
 
 # Set default plot settings
 DEFAULT_COLORMAP = 'magma'
@@ -118,6 +123,22 @@ rcParams['font.family'] = 'sans-serif'
 rcParams['font.sans-serif'] = ['Arial']
 rcParams['font.cursive'] = ['Arial']
 rcParams['mathtext.fontset'] = 'custom'
+if DARK_THEME and qdarkstyle_imported:
+    DARK_COLOR = '#19232D'
+    GREY_COLOR = '#505F69'
+    LIGHT_COLOR = '#F0F0F0'
+    BLUE_COLOR = '#148CD2'
+    rcParams['figure.facecolor'] = DARK_COLOR
+    rcParams['axes.facecolor'] = DARK_COLOR
+    rcParams['axes.edgecolor'] = GREY_COLOR
+    rcParams['text.color'] = LIGHT_COLOR
+    rcParams['xtick.color'] = LIGHT_COLOR
+    rcParams['ytick.color'] = LIGHT_COLOR
+    rcParams['axes.labelcolor'] = LIGHT_COLOR
+    rcParams['savefig.facecolor'] = 'white'
+    color_cycle = [BLUE_COLOR, 'ff7f0e', '2ca02c', 'd62728', '9467bd', 
+                   '8c564b', 'e377c2', '7f7f7f', 'bcbd22', '17becf']
+    rcParams['axes.prop_cycle'] = cycler('color', color_cycle)
 
 # Colormaps
 cmaps = OrderedDict()
@@ -171,7 +192,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.window_title = 'Inspectra Gadget'
         self.window_title_auto_refresh = ''
         self.setupUi(self)
-        self.set_theme()
         self.init_plot_settings()
         self.init_view_settings()
         self.init_filters()
@@ -179,13 +199,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.init_canvas()
         self.linked_folder = None
         self.linked_files = []
-        
-    def set_theme(self):
-        pass
-        #pal = self.window().palette()
-        #pal.setColor(QtGui.QPalette.Window, QtGui.QColor(0x40434a))
-        #pal.setColor(QtGui.QPalette.WindowText, QtGui.QColor(0xd6d6d6))
-        #self.window().setPalette(pal)
         
     def init_plot_settings(self):
         #font_sizes = ['xx-small','x-small','small','medium','large','x-large','xx-large']
@@ -441,7 +454,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 items = [self.file_list.item(n) for n in range(self.file_list.count())]
             for item in items:
                 data = item.data(QtCore.Qt.UserRole) 
-                if data.filepath in self.linked_files and data.duplicate == False: # TODO if duplicates exist file is not removed
+                if data.filepath in self.linked_files and data.duplicate == False:
                     self.linked_files.remove(item.data(QtCore.Qt.UserRole).filepath)
                 if item.checkState() == 2:
                     update_plots = True
@@ -968,7 +981,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('open_item_menu')
         current_item = self.file_list.currentItem()
         if current_item:
-            if signal.text() == 'Duplicate...': # TODO remove duplicate from linked folder list
+            if signal.text() == 'Duplicate...':
                 self.file_list.itemChanged.disconnect(self.file_checked)
                 current_data = current_item.data(QtCore.Qt.UserRole)
                 item = QtWidgets.QListWidgetItem()
@@ -1166,11 +1179,28 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     dpi = int(data.settings['dpi'])
                 except:
                     dpi = 'figure'
+                    
+                if DARK_THEME and qdarkstyle_imported:                
+                    rcParams['text.color'] = 'black'
+                    rcParams['xtick.color'] = 'black'
+                    rcParams['ytick.color'] = 'black'
+                    rcParams['axes.facecolor'] = 'white'
+                    rcParams['axes.edgecolor'] = 'black'
+                    rcParams['axes.labelcolor'] = 'black'
+                    self.update_plots()
                 self.figure.savefig(filename, dpi=dpi,
                                     transparent=data.settings['transparent']=='True',
                                     bbox_inches='tight')
-                print('Saved!')
-                
+                if DARK_THEME and qdarkstyle_imported:
+                    rcParams['axes.facecolor'] = DARK_COLOR
+                    rcParams['axes.edgecolor'] = GREY_COLOR
+                    rcParams['text.color'] = LIGHT_COLOR
+                    rcParams['xtick.color'] = LIGHT_COLOR
+                    rcParams['ytick.color'] = LIGHT_COLOR
+                    rcParams['axes.labelcolor'] = LIGHT_COLOR
+                    self.update_plots()
+                print('Saved!')   
+           
     def save_filters(self):
         if PRINT_FUNCTION_CALLS:
             print('save_filters')
@@ -1594,14 +1624,21 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data = item.data(QtCore.Qt.UserRole)
             plot_data.cursor.horizOn = False
             plot_data.cursor.vertOn = False            
-        self.canvas.draw()            
+        self.canvas.draw()
+        if DARK_THEME and qdarkstyle_imported:
+            rcParams['text.color'] = 'black'
+            rcParams['xtick.color'] = 'black'
+            rcParams['ytick.color'] = 'black'
+            rcParams['axes.facecolor'] = 'white'
+            rcParams['axes.edgecolor'] = 'black'
+            rcParams['axes.labelcolor'] = 'black'
+            self.update_plots()           
         buf = io.BytesIO()
         try:
             dpi = int(plot_data.settings['dpi'])
         except:
             dpi = 'figure'
-        self.figure.savefig(buf, dpi=dpi, 
-                            transparent=plot_data.settings['transparent']=='True', bbox_inches='tight')
+        self.figure.savefig(buf, dpi=dpi, bbox_inches='tight')
         QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
         buf.close()
         for item in checked_items:
@@ -1609,6 +1646,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.cursor.horizOn = True
             plot_data.cursor.vertOn = True                       
         self.canvas.draw()
+        if DARK_THEME and qdarkstyle_imported:
+            rcParams['axes.facecolor'] = DARK_COLOR
+            rcParams['axes.edgecolor'] = GREY_COLOR
+            rcParams['text.color'] = LIGHT_COLOR
+            rcParams['xtick.color'] = LIGHT_COLOR
+            rcParams['ytick.color'] = LIGHT_COLOR
+            rcParams['axes.labelcolor'] = LIGHT_COLOR
+            self.update_plots() 
             
     def mouse_scroll_canvas(self, event):
         if PRINT_FUNCTION_CALLS:
@@ -1866,7 +1911,7 @@ class Data:
                     'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP} 
 
         
-    def load_data(self):
+    def load_data(self): # TODO: Properly handle files that have not completed the first two sweeps
         if PRINT_FUNCTION_CALLS:
             print('load_data')
         if not self.qcodes_file:
@@ -1888,7 +1933,7 @@ class Data:
             self.settings['ylabel'] =  '{} ({})'.format(self.dataset.paramspecs[y_par].label, self.dataset.paramspecs[y_par].unit)
         unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
         
-        if len(indices) > 1: # if first column has more than one uniuqe value
+        if len(indices) > 1: # if first column has more than one unique value
             # shape of data
             l0 = np.sort(indices)[1]
             l1 = len(indices)
@@ -2357,7 +2402,8 @@ class Data:
             self.image[0].set_linewidth(float(settings['linewidth']))
         for axis in ['top','bottom','left','right']:
             self.axes.spines[axis].set_linewidth(float(self.settings['spinewidth']))
-        self.axes.tick_params(labelsize=settings['ticksize'], width=float(self.settings['spinewidth']))
+        self.axes.tick_params(labelsize=settings['ticksize'], 
+                              width=float(self.settings['spinewidth']), color=rcParams['axes.edgecolor'])
         if settings['minorticks'] == 'True':    
             self.axes.minorticks_on()
         if settings['title'] == '<filename>':
@@ -2368,7 +2414,7 @@ class Data:
             self.axes.set_title(settings['title'], size=settings['titlesize'])
         if settings['colorbar'] == 'True' and len(self.columns) == 3:
             self.cbar.ax.set_title(settings['clabel'], size=settings['labelsize'])
-            self.cbar.ax.tick_params(labelsize=settings['ticksize']) 
+            self.cbar.ax.tick_params(labelsize=settings['ticksize'], color=rcParams['axes.edgecolor']) 
             self.cbar.outline.set_linewidth(float(self.settings['spinewidth']))
 
     def apply_view_settings(self):
@@ -2383,7 +2429,7 @@ class Data:
                 self.cbar.update_normal(self.image)
                 self.cbar.ax.set_title(self.settings['clabel'], 
                                        size=self.settings['labelsize'])
-                self.cbar.ax.tick_params(labelsize=self.settings['ticksize'])          
+                self.cbar.ax.tick_params(labelsize=self.settings['ticksize'], color=rcParams['axes.edgecolor'])          
     
     def apply_colormap(self):
         if PRINT_FUNCTION_CALLS:
@@ -2887,7 +2933,7 @@ class LineCutWindow(QtWidgets.QWidget):
         self.x, self.y = x, y
         self.figure.clear()
         self.axes = self.figure.add_subplot(111)
-        self.image = self.axes.plot(x, y, 'C3', linewidth=self.linewidth)
+        self.image = self.axes.plot(x, y, linewidth=self.linewidth)
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
         self.apply_plot_settings()
 
@@ -2971,7 +3017,7 @@ class LineCutWindow(QtWidgets.QWidget):
     def apply_plot_settings(self):
         self.axes.set_xlabel(self.xlabel, size='xx-large')
         self.axes.set_ylabel(self.ylabel, size='xx-large')
-        self.axes.tick_params(labelsize='x-large')
+        self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
         self.axes.set_title(self.title, size='x-large')
         self.canvas.draw()
         
@@ -3002,13 +3048,37 @@ class LineCutWindow(QtWidgets.QWidget):
                 self, 'Save Figure As...', '', formats)
         if filename:
             print('Save Figure as '+filename+' ...')
+            if DARK_THEME and qdarkstyle_imported:
+                rcParams['axes.facecolor'] = 'white'
+                rcParams['axes.edgecolor'] = 'black'
+                rcParams['text.color'] = 'black'
+                rcParams['xtick.color'] = 'black'
+                rcParams['ytick.color'] = 'black'
+                rcParams['axes.labelcolor'] = 'black'
+                self.parent.update_linecut()
             self.figure.savefig(filename)
+            if DARK_THEME and qdarkstyle_imported:
+                rcParams['axes.facecolor'] = DARK_COLOR
+                rcParams['axes.edgecolor'] = GREY_COLOR
+                rcParams['text.color'] = LIGHT_COLOR
+                rcParams['xtick.color'] = LIGHT_COLOR
+                rcParams['ytick.color'] = LIGHT_COLOR
+                rcParams['axes.labelcolor'] = LIGHT_COLOR
+                self.parent.update_linecut()
             print('Saved!')
     
     def copy_image(self):
         self.cursor.horizOn = False
         self.cursor.vertOn = False            
-        self.canvas.draw()            
+        self.canvas.draw()
+        if DARK_THEME and qdarkstyle_imported:
+            rcParams['axes.facecolor'] = 'white'
+            rcParams['axes.edgecolor'] = 'black'
+            rcParams['text.color'] = 'black'
+            rcParams['xtick.color'] = 'black'
+            rcParams['ytick.color'] = 'black'
+            rcParams['axes.labelcolor'] = 'black'
+            self.parent.update_linecut()           
         buf = io.BytesIO()
         self.figure.savefig(buf, dpi=300, transparent=True, bbox_inches='tight')
         QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
@@ -3016,6 +3086,14 @@ class LineCutWindow(QtWidgets.QWidget):
         self.cursor.horizOn = True
         self.cursor.vertOn = True                       
         self.canvas.draw()
+        if DARK_THEME and qdarkstyle_imported:
+            rcParams['axes.facecolor'] = DARK_COLOR
+            rcParams['axes.edgecolor'] = GREY_COLOR
+            rcParams['text.color'] = LIGHT_COLOR
+            rcParams['xtick.color'] = LIGHT_COLOR
+            rcParams['ytick.color'] = LIGHT_COLOR
+            rcParams['axes.labelcolor'] = LIGHT_COLOR
+            self.parent.update_linecut()
             
     def mouse_scroll_canvas(self, event):
         if event.inaxes:
@@ -3047,7 +3125,7 @@ class ParametersWindow(QtWidgets.QWidget):
         self.axes.plot(self.x, self.y,'.')
         self.axes.set_xlabel(xlabel, size=DEFAULT_PLOT_SETTINGS['labelsize'])
         self.axes.set_ylabel(ylabel, size=DEFAULT_PLOT_SETTINGS['labelsize'])
-        self.axes.tick_params(labelsize=DEFAULT_PLOT_SETTINGS['ticksize'])
+        self.axes.tick_params(labelsize=DEFAULT_PLOT_SETTINGS['ticksize'], color=rcParams['axes.edgecolor'])
         self.canvas.draw()
         self.figure.tight_layout(pad=2)
         self.canvas.draw()
@@ -3090,7 +3168,7 @@ class FFTWindow(QtWidgets.QWidget):
         self.image = self.axes.pcolormesh(self.fft, shading='auto', norm=LogNorm(vmin=self.fft.min(), vmax=self.fft.max()))
         self.cbar = self.figure.colorbar(self.image, orientation='vertical')
         self.figure.tight_layout(pad=2)
-        self.axes.tick_params(labelsize=DEFAULT_PLOT_SETTINGS['ticksize'])
+        self.axes.tick_params(labelsize=DEFAULT_PLOT_SETTINGS['ticksize'], color=rcParams['axes.edgecolor'])
         self.canvas.draw()
         self.vertical_layout.addWidget(self.navi_toolbar)
         self.vertical_layout.addWidget(self.canvas)
@@ -3282,7 +3360,12 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.aboutToQuit.connect(app.deleteLater)
     app.lastWindowClosed.connect(app.quit)
+    
     edit_window = Editor()
+    
+    if DARK_THEME and qdarkstyle_imported:
+        app.setStyleSheet(qdarkstyle.load_stylesheet_pyqt5())
+    
     edit_window.show()
     app.exec_()
 
