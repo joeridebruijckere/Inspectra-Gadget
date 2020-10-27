@@ -704,15 +704,6 @@
      <height>21</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menu_auto_refresh">
-    <property name="title">
-     <string>Auto Refresh</string>
-    </property>
-    <addaction name="action_refresh_30s"/>
-    <addaction name="action_refresh_5m"/>
-    <addaction name="action_refresh_30m"/>
-    <addaction name="action_refresh_stop"/>
-   </widget>
    <widget class="QMenu" name="menu_save_session">
     <property name="title">
      <string>Save Session</string>
@@ -748,13 +739,12 @@
    </widget>
    <widget class="QMenu" name="menuLink">
     <property name="title">
-     <string>Link</string>
+     <string>Link Data</string>
     </property>
     <addaction name="action_link_to_folder"/>
     <addaction name="action_unlink_folder"/>
    </widget>
    <addaction name="menu_save_session"/>
-   <addaction name="menu_auto_refresh"/>
    <addaction name="menu_merge_data"/>
    <addaction name="menu_open_folder"/>
    <addaction name="menu_apply_preset"/>
