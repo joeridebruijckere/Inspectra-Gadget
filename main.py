@@ -4,8 +4,11 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere
 
-Last updated on Oct 20 2020
+Last updated on Oct 26 2020
+
 """
+
+# TODO: Properly handle files that have not completed the first two sweeps
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
@@ -13,6 +16,7 @@ import os
 import copy
 import json
 import io
+from datetime import timedelta, datetime
 from stat import ST_CTIME
 import numpy as np
 from scipy.interpolate import griddata
@@ -52,6 +56,7 @@ import fits
 
 # Set default plot settings
 DEFAULT_COLORMAP = 'magma'
+DEFAULT_REVERSE_COLORMAP = True
 DEFAULT_PLOT_SETTINGS = {}
 DEFAULT_PLOT_SETTINGS['title'] = '<filename>'
 DEFAULT_PLOT_SETTINGS['xlabel'] = ''
@@ -73,6 +78,7 @@ DEFAULT_PLOT_SETTINGS['rasterized'] = 'True'
 DEFAULT_PLOT_SETTINGS['dpi'] = '300'
 DEFAULT_PLOT_SETTINGS['transparent'] = 'False'
 DEFAULT_PLOT_SETTINGS['rc-filter'] = ''
+DEFAULT_PLOT_SETTINGS['metadata'] = 'True'
 
 # List of custom presets
 PRESETS = [{'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5',
@@ -92,9 +98,11 @@ CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 DEFAULT_VALUE_RCFILTER_CORRECT = False # If True: apply rc-filter correction by default upon loading data
 DEFAULT_RC_FILTER = 8240 # Default resistance rc-filter(s)
 DEFAULT_SHOW_METADATANAME = True
-SHOW_SETTINGS_ON_CANVAS = True
-CHANNELS_TO_SHOW = ['source', 'g1', 'g1f', 'g2', 'g2f', 'g3', 'g3f', 
-                    'g4', 'g4f', 'g7', 'g7f', 'bg', 'Bx', 'Bz', 'T']
+COMBINATION_GATE_SWEEPS_POSSIBLE = True # TODO fix for general case
+CHANNELS_TO_SHOW = ['source', 'g1', 'g2', 'g3', 'g4', 'bg', 'sg', 'Bx', 'Bz', 'T']
+
+#['source', 'g1', 'g1f', 'g2', 'g2f', 'g3', 'g3f', 
+#                    'g4', 'g4f', 'g7', 'g7f', 'bg', 'Bx', 'Bz', 'T']
 
 # QCoDeS default settings
 DEFAULT_INDEX_DEPENDENT_PARAMETER = 0 # upon opening a dataset the dependent parameter with this index will be plotted
@@ -161,7 +169,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def __init__(self):
         super(self.__class__, self).__init__()
         self.window_title = 'Inspectra Gadget'
+        self.window_title_auto_refresh = ''
         self.setupUi(self)
+        self.set_theme()
         self.init_plot_settings()
         self.init_view_settings()
         self.init_filters()
@@ -169,6 +179,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.init_canvas()
         self.linked_folder = None
         self.linked_files = []
+        
+    def set_theme(self):
+        pass
+        #pal = self.window().palette()
+        #pal.setColor(QtGui.QPalette.Window, QtGui.QColor(0x40434a))
+        #pal.setColor(QtGui.QPalette.WindowText, QtGui.QColor(0xd6d6d6))
+        #self.window().setPalette(pal)
         
     def init_plot_settings(self):
         #font_sizes = ['xx-small','x-small','small','medium','large','x-large','xx-large']
@@ -197,6 +214,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.settings_menu_list['rasterized'] = ['False','True']
         self.settings_menu_list['dpi'] = ['figure']
         self.settings_menu_list['transparent'] = ['True', 'False']
+        self.settings_menu_list['metadata'] = ['True', 'False']
         table = self.settings_table
         table.setColumnCount(2)
         table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
@@ -306,7 +324,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.lock_checkbox.clicked.connect(lambda: self.view_setting_edited('Locked'))
         self.mid_checkbox.clicked.connect(lambda: self.view_setting_edited('MidLock'))
         self.reset_limits_button.clicked.connect(self.reset_color_limits)
-        self.action_save_canvas.triggered.connect(self.save_image)
+        self.save_image_button.clicked.connect(self.save_image)
+        self.copy_image_button.clicked.connect(self.copy_canvas_to_clipboard)
         self.load_filters_button.clicked.connect(self.load_filters)
         self.action_filters.triggered.connect(self.save_filters)
         self.action_current_file.triggered.connect(lambda: self.save_session('current'))
@@ -314,6 +333,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_checked_files.triggered.connect(lambda: self.save_session('checked'))
         self.action_merge_raw.triggered.connect(lambda: self.merge_files(raw_data=True))
         self.action_merge_processed.triggered.connect(lambda: self.merge_files(raw_data=False))
+        self.action_live_tracking.triggered.connect(lambda: self.start_auto_refresh(time_interval=1))
         self.action_refresh_30s.triggered.connect(lambda: self.start_auto_refresh(time_interval=30))
         self.action_refresh_5m.triggered.connect(lambda: self.start_auto_refresh(time_interval=300))
         self.action_refresh_30m.triggered.connect(lambda: self.start_auto_refresh(time_interval=1800))
@@ -327,6 +347,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_preset_3.triggered.connect(lambda: self.apply_preset(3))
         self.action_refresh_stop.setEnabled(False)
         self.action_link_to_folder.triggered.connect(lambda: self.update_link_to_folder(new_folder=True))
+        self.action_unlink_folder.triggered.connect(self.unlink_folder)
         self.refresh_file_button.clicked.connect(self.refresh_plot)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
         self.down_file_button.clicked.connect(lambda: self.move_file('down'))
@@ -345,7 +366,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                              (3,4),(3,4),(3,4),(3,4),(4,4),(4,4),(4,4),(4,4),
                              (4,5),(4,5),(4,5),(4,5),(4,5),(5,5),(5,5),(5,5),
                              (5,5)]
-        if SHOW_SETTINGS_ON_CANVAS:
+        if DEFAULT_PLOT_SETTINGS['metadata'] == 'True':
             self.figure.subplots_adjust(0.17,0.2,0.8,0.85)
 
     def open_files(self, filenames=None):
@@ -419,7 +440,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             elif which == 'all':
                 items = [self.file_list.item(n) for n in range(self.file_list.count())]
             for item in items:
-                if item.data(QtCore.Qt.UserRole).filepath in self.linked_files:
+                data = item.data(QtCore.Qt.UserRole) 
+                if data.filepath in self.linked_files and data.duplicate == False: # TODO if duplicates exist file is not removed
                     self.linked_files.remove(item.data(QtCore.Qt.UserRole).filepath)
                 if item.checkState() == 2:
                     update_plots = True
@@ -482,7 +504,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     data = item.data(QtCore.Qt.UserRole)
                     if data.processed_data == None: # if data is loaded for first time
                         data.load_data()
-                        data.apply_all_filters()
+                        if data.meta_data:
+                            data.interpret_meta_file()
+                            data.processed_to_raw()
+                            data.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
+                            data.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
+                        else:
+                            data.apply_all_filters()
                     data.figure = self.figure
                     data.axes = data.figure.add_subplot(
                             self.subplot_rows, self.subplot_cols, index+1)
@@ -491,6 +519,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         data.add_plot_2d()
                     else:
                         data.add_plot()
+                        data.reset_view_settings()
+                        data.apply_view_settings()
                         try:
                             data.linecut_window
                         except AttributeError:
@@ -522,6 +552,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.update_plots()
             
     def to_next_file(self):
+        if PRINT_FUNCTION_CALLS:
+            print('to_next_file')
         checked_items = [(self.file_list.item(index), index) for index in range(self.file_list.count()) 
                          if self.file_list.item(index).checkState() == 2]
         if len(checked_items) == 1 and self.file_list.count() > 1 and checked_items[0][1]+1 < self.file_list.count():
@@ -535,6 +567,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.update_plots()
         
     def to_previous_file(self):
+        if PRINT_FUNCTION_CALLS:
+            print('to_previous_file')
         checked_items = [(self.file_list.item(index), index) for index in range(self.file_list.count()) 
                          if self.file_list.item(index).checkState() == 2]
         if len(checked_items) == 1 and self.file_list.count() > 1 and checked_items[0][1] > 0:
@@ -555,28 +589,47 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
         self.action_refresh_stop.setEnabled(True)
         self.auto_refresh_timer.start()
-        self.setWindowTitle(self.window_title+' - Auto-Refreshing Enabled')
+        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
+        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+        self.auto_refresh_call()
         
     def auto_refresh_call(self):
-        self.setWindowTitle(self.window_title+' - Auto-Refreshing Enabled (Auto-Refreshing...)')
-        file_list = self.file_list
-        checked_items = [file_list.item(index) for index in range(file_list.count()) 
-                         if file_list.item(index).checkState() == 2]
-        if checked_items:
-            for index, item in enumerate(checked_items):
-                data = item.data(QtCore.Qt.UserRole)
-                data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
-            self.update_plots()
         if self.linked_folder:
             self.update_link_to_folder(new_folder=False)
-        self.setWindowTitle(self.window_title+' - Auto-Refreshing Enabled')
+        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled (Refreshing...)'
+        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+        checked_items = [self.file_list.item(index) for index in range(self.file_list.count()) 
+                         if self.file_list.item(index).checkState() == 2]        
+        # Refresh all checked items
+        if checked_items:
+            for index, item in enumerate(checked_items):
+                item.data(QtCore.Qt.UserRole).refresh_data(update_color_limits=False, 
+                                                           refresh_unit_conversion=False)
+        self.update_plots()
+        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
+        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)        
+        
+        # Update progress of last item (if checked)
+        last_item = self.file_list.item(self.file_list.count()-1)
+        data = last_item.data(QtCore.Qt.UserRole)
+        if last_item.checkState() == 2 and data.last_modified_time:
+            if datetime.now().timestamp() - data.last_modified_time > 120 or data.progress_fraction == 1:
+                print('Stop auto refresh...')
+                data.remaining_time_string = ''
+                self.stop_auto_refresh()
+            else:
+                self.remaining_time_label.setText(data.remaining_time_string)
+        else:
+            self.remaining_time_label.setText('')
             
     def stop_auto_refresh(self):
         if PRINT_FUNCTION_CALLS:
             print('stop_auto_refresh')
         self.auto_refresh_timer.stop()
         self.action_refresh_stop.setEnabled(False)
-        self.setWindowTitle(self.window_title)
+        self.window_title_auto_refresh = ''
+        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+        self.remaining_time_label.setText('')
         
     def move_file(self, direction):
         if PRINT_FUNCTION_CALLS:
@@ -713,6 +766,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 elif setting_name == 'rasterized' or setting_name == 'colorbar':
                     self.update_plots()
                 elif setting_name == 'minorticks':
+                    self.update_plots()
+                elif setting_name == 'metadata':
                     self.update_plots()
                 data.apply_plot_settings()
                 self.canvas.draw()
@@ -899,7 +954,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             checked_items = [self.file_list.item(index) for index in range(self.file_list.count()) 
                              if self.file_list.item(index).checkState() == 2]
             menu = QtWidgets.QMenu(self)
-            actions = ['Check only this item...','Check all...']
+            actions = ['Duplicate...','Check all...']
             if len(checked_items) > 1:
                 actions.append('Combine plots...')
             for entry in actions:
@@ -913,13 +968,24 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('open_item_menu')
         current_item = self.file_list.currentItem()
         if current_item:
-            if signal.text() == 'Check only this item...':
+            if signal.text() == 'Duplicate...': # TODO remove duplicate from linked folder list
                 self.file_list.itemChanged.disconnect(self.file_checked)
-                for item_index in range(self.file_list.count()):
-                    self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-                current_item.setCheckState(QtCore.Qt.Checked)
+                current_data = current_item.data(QtCore.Qt.UserRole)
+                item = QtWidgets.QListWidgetItem()
+                item.setData(QtCore.Qt.UserRole, Data(current_data.filepath, self.canvas))
+                item.data(QtCore.Qt.UserRole).settings = current_data.settings.copy()
+                item.data(QtCore.Qt.UserRole).view_settings = current_data.view_settings.copy()
+                item.data(QtCore.Qt.UserRole).filters = copy.deepcopy(current_data.filters)
+                item.data(QtCore.Qt.UserRole).duplicate = True
+                item.setText(current_item.text())
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                item.setCheckState(QtCore.Qt.Checked)
+                self.file_list.addItem(item)
+                if item.data(QtCore.Qt.UserRole).meta_data:
+                    item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)                
                 self.file_list.itemChanged.connect(self.file_checked)
                 self.update_plots()
+                self.file_list.setCurrentItem(item)
             elif signal.text() == 'Check all...':
                 self.file_list.itemChanged.disconnect(self.file_checked)
                 for item_index in range(self.file_list.count()):                        
@@ -931,7 +997,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.combine_plots()
                 except:
                     print('Cannot combine these plots...')
-                
                 
     def combine_plots(self):
         items = self.file_list
@@ -950,8 +1015,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.multi_plot_window.ylabel = data_list[0].settings['ylabel']
             self.multi_plot_window.zlabel = None
             self.multi_plot_window.draw_plots()
-            self.multi_plot_window.show()        
-    
+            self.multi_plot_window.show()
     
     def open_plot_settings_menu(self):
         if PRINT_FUNCTION_CALLS:
@@ -1191,7 +1255,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.linked_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
         if self.linked_folder:
             self.window_title = 'Inspectra Gadget - Linked to folder '+self.linked_folder
-            self.setWindowTitle(self.window_title)
+            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
             new_files = []
             for subdir, dirs, files in os.walk(self.linked_folder):
                 for file in files:
@@ -1209,7 +1273,18 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         self.linked_files.append(new_file[1])
                     except:
                         print('Could not open', new_file[1])
+                        #raise
                         continue
+                if new_folder:
+                    last_item = self.file_list.item(self.file_list.count()-1)
+                    self.file_list.setCurrentItem(last_item)
+                    last_item.setCheckState(QtCore.Qt.Checked)
+                    
+    def unlink_folder(self):
+        if self.linked_folder:
+            self.linked_folder = None
+            self.window_title = 'Inspectra Gadget'
+            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
     
     def save_files_as(self, extension):
         if PRINT_FUNCTION_CALLS:
@@ -1343,11 +1418,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                        'Plot vertical linecuts...',
                                        'Plot horizontal linecuts...',
                                        'FFT vertical...',
-                                       'FFT horizontal...',
-                                       'Copy canvas to clipboard...']
+                                       'FFT horizontal...']
                         elif len(plot_data.columns) == 2:
-                            entries = ['Refresh plot...',
-                                       'Copy canvas to clipboard...']
+                            entries = ['Refresh plot...']
                         for entry in entries:
                             action = QtWidgets.QAction(entry, self)
                             menu.addAction(action)
@@ -1365,14 +1438,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         max_map = data.view_settings['Maximum']
                         new_value = min_map + y*(max_map-min_map)
                         if event.button == 1:
-                            print('leftmouseclickcbar')
                             data.view_settings['Minimum'] = new_value
                             data.reset_midpoint()
                         elif event.button == 2:
-                            print('middlemouseclickcbar')
                             data.view_settings['Midpoint'] = new_value
                         elif event.button == 3:
-                            print('rightmouseclickcbar')
                             data.view_settings['Maximum'] = new_value
                             data.reset_midpoint()
                         data.apply_view_settings()
@@ -1503,9 +1573,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             plot_data.index_dependent_parameter = plot_data.dependent_parameters.index(signal.text())
             plot_data.refresh_data(update_color_limits=True)
             self.update_plots()
-            self.show_current_all()            
-        elif signal.text() == 'Copy canvas to clipboard...':
-            self.copy_canvas_to_clipboard()
+            self.show_current_all()
       
     def hide_linecuts(self, plot_data):
         plot_data.linecut_window.running = False         
@@ -1549,7 +1617,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             y = event.ydata
             items = self.file_list
             self.plot_in_focus = [items.item(index) for index in range(items.count()) 
-                    if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
+                                  if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
             if self.plot_in_focus:
                 data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
                 if len(data.columns) == 3:
@@ -1573,16 +1641,17 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 checked_items = [items.item(index) for index in range(items.count()) 
                         if items.item(index).checkState() == 2]
                 self.cbar_in_focus = [checked_item for checked_item in checked_items
-                                    if checked_item.data(QtCore.Qt.UserRole).cbar.ax == event.inaxes]
+                                      if checked_item.data(QtCore.Qt.UserRole).cbar.ax == event.inaxes]
                 if self.cbar_in_focus:
                     data = self.cbar_in_focus[0].data(QtCore.Qt.UserRole)
                     min_map = data.view_settings['Minimum']
                     max_map = data.view_settings['Maximum']
-                    if y > 0.5:    
-                        new_max = max_map + event.step*(max_map-min_map)*0.02
+                    range_map = max_map-min_map
+                    if y > min_map+0.5*range_map:    
+                        new_max = max_map + event.step*range_map*0.02
                         data.view_settings['Maximum'] = new_max
                     else:
-                        new_min = min_map + event.step*(max_map-min_map)*0.02
+                        new_min = min_map + event.step*range_map*0.02
                         data.view_settings['Minimum'] = new_min
                     data.reset_midpoint()
                     data.apply_view_settings()
@@ -1612,7 +1681,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.start_auto_refresh(1)
                 print('Start live tracking...')
             else:
-                self.stop_auto_refresh() # todo: auto stop?
+                self.stop_auto_refresh()
                 print('Stop live tracking...')
             
                
@@ -1695,12 +1764,12 @@ class Data:
         self.filename = os.path.basename(filepath)
         self.canvas = canvas
         self.default_settings = DEFAULT_PLOT_SETTINGS
-        self.show_settings = SHOW_SETTINGS_ON_CANVAS
         self.default_filters = []
         self.filters = copy.deepcopy(self.default_filters)
         self.settings = self.default_settings.copy()
         self.old_settings = self.default_settings.copy()
         self.columns = [int(s) for s in self.default_settings['columns'].split(',')]
+        self.duplicate = False
         self.measurement_bounds = None
         self.draw_full_range = False
         self.channels = []
@@ -1712,7 +1781,30 @@ class Data:
         self.dataset = None
         self.npy_file = False
         self.qcodes_file = False
-        
+        self.selected_indices = [0, 0]
+        self.figure = None
+        self.axes = None
+        self.image = None
+        self.cbar = None
+        self.orientation = None
+        self.multi_orientation = None
+        self.cropping = False
+        self.drawing_diagonal_linecut = False
+        self.drawing_circular_linecut = False
+        self.list_points = []
+        self.index_dependent_parameter = DEFAULT_INDEX_DEPENDENT_PARAMETER
+        self.dependent_parameters = None
+        self.remaining_time = None
+        self.remaining_time_string = ''
+        self.last_modified_time = None
+        try: # on Windows
+            self.creation_time = os.path.getctime(filepath)
+        except:
+            try: # on Mac
+                self.creation_time = os.stat(filepath).st_birthtime
+            except:
+                self.creation_time = None
+
      
         if isinstance(data, dict): # for .npy files, saved using the "Save Session" menu
             self.npy_file = True
@@ -1739,7 +1831,7 @@ class Data:
                     'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
                     'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
                     'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
-                    'Locked': 0, 'MidLock': 0, 'Reverse': 0} 
+                    'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP} 
                        
         else:
             if do_load_data:
@@ -1765,34 +1857,21 @@ class Data:
                         'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
                         'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
                         'Norm': MidpointNormalize(vmin=min_map, vmax=max_map, midpoint=mid_map),
-                        'Locked': 0, 'MidLock': 0, 'Reverse': 0}
+                        'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP}
             else:
                 self.view_settings = {
                     'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
                     'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
                     'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
-                    'Locked': 0, 'MidLock': 0, 'Reverse': 0} 
-                
-        
-        self.selected_indices = [0, 0]
-        self.figure = None
-        self.axes = None
-        self.image = None
-        self.cbar = None
-        self.orientation = None
-        self.multi_orientation = None
-        self.cropping = False
-        self.drawing_diagonal_linecut = False
-        self.drawing_circular_linecut = False
-        self.list_points = []
-        self.index_dependent_parameter = DEFAULT_INDEX_DEPENDENT_PARAMETER
-        self.dependent_parameters = None
+                    'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP} 
+
         
     def load_data(self):
         if PRINT_FUNCTION_CALLS:
             print('load_data')
         if not self.qcodes_file:
             column_data = np.genfromtxt(self.filepath, delimiter=self.settings['delimiter'])
+            self.measured_data_points = column_data.shape[0]
         else:
             self.dependent_parameters = [p.name for p in self.dataset.dependent_parameters]
             dependent_par = self.dependent_parameters[self.index_dependent_parameter]
@@ -1818,9 +1897,10 @@ class Data:
             if len(column_data[np.sort(indices)[-1]::,0]) < l0:
                 l1 = l1-1
                 
-            # # check if subsequent column is also repeated (e.g. for combination gate sweeps)
-            # if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
-            #     self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
+            if COMBINATION_GATE_SWEEPS_POSSIBLE: # TODO fix this for general case   
+            # check if subsequent column is also repeated (e.g. for combination gate sweeps)
+                if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
+                    self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
             
             # check if file is 2D or 3D
             if (column_data[1,self.columns[0]] != column_data[0,self.columns[0]]) or len(self.columns) == 2: # if 2D
@@ -1846,8 +1926,8 @@ class Data:
         if meta_data:
             self.meta_data = meta_data
         else:
-            self.metaFile = os.path.dirname(self.filepath)+'/meta.json'
-            with open(self.metaFile) as f:
+            self.meta_file = os.path.dirname(self.filepath)+'/meta.json'
+            with open(self.meta_file) as f:
                 self.meta_data = json.load(f)            
         self.channels = [channel['name'] for channel in self.meta_data['columns']]
         if change_labels:
@@ -1870,43 +1950,48 @@ class Data:
             self.settings['title'] = '<metadataname>'
         
         self.settings_string = ''
-        if self.show_settings:
-            channels_to_show = CHANNELS_TO_SHOW
-            meta_channels = self.meta_data['setup']['channels']
-            for instrument in self.meta_data['register']['instruments']:
-                if instrument['name'] == 'dac':
-                    dac = instrument
-                    break
-            for channel in channels_to_show:
-                try:
-                    if channel in meta_channels:
-                        for register_channel in self.meta_data['register']['channels']:
-                            if register_channel['name'] == channel: 
-                                if register_channel['instrument'] == 'dac':  
-                                    value = dac['current_values'][register_channel['channel_id']]
-                                    self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                    break
-                                elif register_channel['instrument'] == 'smua':
-                                    for instrument in self.meta_data['register']['instruments']:
-                                        if instrument['name'] == 'smua' and 'current_values' in instrument.keys():
-                                            value = instrument['current_values']['v']
-                                            self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                            break
-                        else:
-                            if channel == 'Bx' or channel == 'Bz':
-                                for instrument in self.meta_data['register']['instruments']:
-                                    if instrument['name'] == 'magnet':
-                                        value = instrument['field'][channel[1:]]
-                                        self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                        break
-                    elif channel == 'T':
-                        for instrument in self.meta_data['register']['instruments']:
-                            if instrument['name'] == 'triton':
-                                value = instrument['temperatures']['MC']*1000
+        channels_to_show = CHANNELS_TO_SHOW
+        meta_channels = self.meta_data['setup']['channels']
+        for instrument in self.meta_data['register']['instruments']:
+            if instrument['name'] == 'dac':
+                dac = instrument
+                break
+        for channel in channels_to_show:
+            try:
+                if channel in meta_channels:
+                    for register_channel in self.meta_data['register']['channels']:
+                        if register_channel['name'] == channel: 
+                            if register_channel['instrument'] == 'dac':  
+                                value = dac['current_values'][register_channel['channel_id']]
                                 self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
                                 break
-                except:
-                    print('Could not add channel',channel,'...')
+                            elif register_channel['instrument'] == 'smua':
+                                for instrument in self.meta_data['register']['instruments']:
+                                    if instrument['name'] == 'smua' and 'current_values' in instrument.keys():
+                                        value = instrument['current_values']['v']
+                                        self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                        break
+                            elif register_channel['instrument'] == 'smub':
+                                for instrument in self.meta_data['register']['instruments']:
+                                    if instrument['name'] == 'smub' and 'current_values' in instrument.keys():
+                                        value = instrument['current_values']['v']
+                                        self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                        break
+                    else:
+                        if channel == 'Bx' or channel == 'Bz':
+                            for instrument in self.meta_data['register']['instruments']:
+                                if instrument['name'] == 'magnet':
+                                    value = instrument['field'][channel[1:]]
+                                    self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                                    break
+                elif channel == 'T':
+                    for instrument in self.meta_data['register']['instruments']:
+                        if instrument['name'] == 'triton':
+                            value = instrument['temperatures']['MC']*1000
+                            self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
+                            break
+            except:
+                print('Could not add channel',channel,'...')
          
     def correct_for_rcfilters(self):
         if PRINT_FUNCTION_CALLS:
@@ -1950,18 +2035,29 @@ class Data:
     def meta_unit_conversion(self):
         if PRINT_FUNCTION_CALLS:
             print('meta_unit_conversion')
-        try:
+        
+        # Get bounds to be able to show full range during measurement
+        try: 
             bound_from = self.meta_data['job']['from']
             bound_to = self.meta_data['job']['to']
         except KeyError:
             bound_from = self.meta_data['job']['job']['from']
             bound_to = self.meta_data['job']['job']['to']
+        
+        # Get total number of (to be) measured data points
+        self.total_data_points = 1 
+        if 'points' in self.meta_data['job'].keys():
+            self.total_data_points *= self.meta_data['job']['points']
+        if 'points' in self.meta_data['job']['job'].keys():
+            self.total_data_points *= self.meta_data['job']['job']['points']
             
+        # If x-parameter is combination of channels -> take bounds that belongs to the displayed channel    
         if isinstance(bound_from, list):
             if self.channels[self.columns[0]] in self.meta_data['job']['chans']:
                 bound_from = bound_from[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
                 bound_to = bound_to[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
         
+        # Unit conversion of different channels (using data from meta.json file)
         if 'source' in self.channels:
             source_index = self.channels.index('source')
             if source_index in self.columns:
@@ -1982,6 +2078,7 @@ class Data:
                     self.measurement_bounds = [bound_from/(source_divider*SOURCE_UNIT),
                                                bound_to/(source_divider*SOURCE_UNIT)]
         
+        # Gate voltages are combinations of a coarse channel and a fine channel
         fine_gates = [channel for channel in self.channels if channel[0] == 'g' and channel[-1] == 'f']
         for gate in fine_gates:
             gate_index = self.channels.index(gate)
@@ -2116,6 +2213,18 @@ class Data:
                     self.settings['xlabel'] = 'Backgate voltage (V)'
                 elif self.columns.index(bg_index) == 1:
                     self.settings['ylabel'] = 'Backgate voltage (V)'
+                if bg_index == 0:   
+                    self.measurement_bounds = [bound_from, bound_to]
+
+        if 'sg' in self.channels:
+            sg_index = self.channels.index('sg')
+            if sg_index in self.columns:
+                if self.columns.index(sg_index) == 0:
+                    self.settings['xlabel'] = 'Side gates voltage (V)'
+                elif self.columns.index(sg_index) == 1:
+                    self.settings['ylabel'] = 'Side gates voltage (V)'
+                if sg_index == 0:   
+                    self.measurement_bounds = [bound_from, bound_to]
         
         if 'Bx' in self.channels:
             if self.channels.index('Bx') == 0:  
@@ -2137,9 +2246,25 @@ class Data:
     def refresh_data(self, update_color_limits=False, refresh_unit_conversion=False):
         if PRINT_FUNCTION_CALLS:
             print('refresh_data')
-        if not self.npy_file: # if data is not directly from a npy file
-            self.load_data()           
-        self.apply_all_filters(update_color_limits, refresh_unit_conversion)        
+        try:
+            if not self.npy_file: # if data is not directly from a npy file
+                self.load_data()           
+            self.apply_all_filters(update_color_limits, refresh_unit_conversion)
+            
+            if self.measured_data_points and self.total_data_points and self.creation_time:
+                self.last_modified_time = os.path.getmtime(self.filepath)
+                spent_time = self.last_modified_time - self.creation_time
+                self.progress_fraction = self.measured_data_points/self.total_data_points             
+                total_time = spent_time / self.progress_fraction
+                remaining_seconds = total_time - spent_time
+                self.remaining_time = timedelta(seconds=remaining_seconds)
+                self.remaining_time_string = '    Progress last measurement:  {:d}% Completed  -  Remaining time:'.format(int(self.progress_fraction*100)) + \
+                                             ' '+str(self.remaining_time).split('.')[0] + \
+                                             '  -  Finishes at: '+str(datetime.now()+self.remaining_time).split('.')[0]
+        except:
+            print('Could not refresh...')
+            if SHOW_ERRORS:
+                raise
     
     def add_plot(self):
         if PRINT_FUNCTION_CALLS:
@@ -2160,7 +2285,7 @@ class Data:
                                right=max(self.measurement_bounds))
         self.cursor = Cursor(self.axes, useblit=True, 
                              color=self.settings['linecolor'], linewidth=0.5)
-        if self.show_settings:
+        if self.settings['metadata'] == 'True':
             self.axes.text(1.2, 0, self.settings_string, 
                            fontsize=self.settings['ticksize'], 
                            transform=self.axes.transAxes)
@@ -2176,7 +2301,7 @@ class Data:
         self.image = self.axes.plot(data[0], data[1], color=cm.get_cmap(cmap)(0.5))
         self.cursor = Cursor(self.axes, useblit=True, 
                              color=self.settings['linecolor'], linewidth=0.5)
-        if self.show_settings:
+        if self.settings['metadata'] == 'True':
             self.axes.text(1.02, 0, self.settings_string, 
                            fontsize=self.settings['ticksize'], 
                            transform=self.axes.transAxes)
@@ -2250,10 +2375,9 @@ class Data:
         if PRINT_FUNCTION_CALLS:
             print('apply_view_settings')
         if len(self.columns) == 3:
-            self.view_settings['Norm'] = MidpointNormalize(
-                    vmin=self.view_settings['Minimum'], 
-                    vmax=self.view_settings['Maximum'], 
-                    midpoint=self.view_settings['Midpoint'])
+            self.view_settings['Norm'] = MidpointNormalize(vmin=self.view_settings['Minimum'], 
+                                                           vmax=self.view_settings['Maximum'], 
+                                                           midpoint=self.view_settings['Midpoint'])
             self.image.set_norm(self.view_settings['Norm'])
             if self.settings['colorbar'] == 'True':
                 self.cbar.update_normal(self.image)
@@ -2311,10 +2435,8 @@ class Data:
                 self.processed_data = filters.apply(self.processed_data, filter_settings)
         if update_color_limits:
             self.reset_view_settings()
-            try:
+            if self.image:
                 self.apply_view_settings()
-            except:
-                pass
             
     def update_linecut(self):
         if PRINT_FUNCTION_CALLS:
@@ -2451,6 +2573,8 @@ class LineCutWindow(QtWidgets.QWidget):
         self.save_image_button.clicked.connect(self.save_image)
         self.copy_image_button = QtWidgets.QPushButton('Copy Image')
         self.copy_image_button.clicked.connect(self.copy_image)
+        self.orientation_button = QtWidgets.QPushButton('Hor./Vert.')
+        self.orientation_button.clicked.connect(self.change_orientation)
         self.clear_button = QtWidgets.QPushButton('Clear')
         self.clear_button.clicked.connect(self.clear_lines)
         self.detect_peaks_button = QtWidgets.QPushButton('Detect Peaks')
@@ -2465,6 +2589,7 @@ class LineCutWindow(QtWidgets.QWidget):
             self.button_layout.addWidget(self.save_button)
         self.button_layout.addWidget(self.save_image_button)
         self.button_layout.addWidget(self.copy_image_button)
+        self.button_layout.addWidget(self.orientation_button)
         self.button_layout.addStretch()
         if self.multiple_files == False:
             self.init_fit()
@@ -2556,7 +2681,15 @@ class LineCutWindow(QtWidgets.QWidget):
                         self.peak_estimates[peak_index].remove()
                         del self.peak_estimates[peak_index]
                         self.canvas.draw()
-                              
+             
+    def change_orientation(self):
+        if self.parent.orientation == 'horizontal':
+            self.parent.orientation = 'vertical'
+        elif self.parent.orientation == 'vertical':
+            self.parent.orientation = 'horizontal'
+        self.parent.update_linecut()
+        self.parent.canvas.draw()
+             
     def clear_lines(self):
         for line in reversed(self.axes.get_lines()):
             if line.get_linestyle() == '--':
