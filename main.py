@@ -58,6 +58,8 @@ import filters
 import fits
 
 DARK_THEME = True
+AUTO_REFRESH_INTERVAL_2D = 1
+AUTO_REFRESH_INTERVAL_3D = 30
 
 # Set default plot settings
 DEFAULT_COLORMAP = 'magma'
@@ -598,8 +600,12 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if PRINT_FUNCTION_CALLS:
             print('track_button_clicked')
         if self.track_button.text() == 'Track':
-            
-            self.start_auto_refresh(1)
+            last_item = self.file_list.item(self.file_list.count()-1)
+            data = last_item.data(QtCore.Qt.UserRole)
+            if len(data.columns) == 2: # if file is 2D
+                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
+            else: # if file is 3D
+                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
         elif self.track_button.text() == 'Stop':
             self.stop_auto_refresh()
         
