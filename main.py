@@ -346,7 +346,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_checked_files.triggered.connect(lambda: self.save_session('checked'))
         self.action_merge_raw.triggered.connect(lambda: self.merge_files(raw_data=True))
         self.action_merge_processed.triggered.connect(lambda: self.merge_files(raw_data=False))
-        self.action_live_tracking.triggered.connect(lambda: self.start_auto_refresh(time_interval=1))
+        self.track_button.clicked.connect(self.track_button_clicked)
         self.action_refresh_30s.triggered.connect(lambda: self.start_auto_refresh(time_interval=30))
         self.action_refresh_5m.triggered.connect(lambda: self.start_auto_refresh(time_interval=300))
         self.action_refresh_30m.triggered.connect(lambda: self.start_auto_refresh(time_interval=1800))
@@ -594,9 +594,19 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.file_list.itemChanged.connect(self.file_checked)
             self.update_plots()
         
+    def track_button_clicked(self):
+        if PRINT_FUNCTION_CALLS:
+            print('track_button_clicked')
+        if self.track_button.text() == 'Track':
+            
+            self.start_auto_refresh(1)
+        elif self.track_button.text() == 'Stop':
+            self.stop_auto_refresh()
+        
     def start_auto_refresh(self, time_interval):
         if PRINT_FUNCTION_CALLS:
             print('start_auto_refresh')
+        self.track_button.setText('Stop')
         self.auto_refresh_timer = QtCore.QTimer()
         self.auto_refresh_timer.setInterval(time_interval*1000)
         self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
@@ -638,6 +648,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def stop_auto_refresh(self):
         if PRINT_FUNCTION_CALLS:
             print('stop_auto_refresh')
+        self.track_button.setText('Track')
         self.auto_refresh_timer.stop()
         self.action_refresh_stop.setEnabled(False)
         self.window_title_auto_refresh = ''
