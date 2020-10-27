@@ -2609,6 +2609,7 @@ class LineCutWindow(QtWidgets.QWidget):
         self.linewidth = self.parent.settings['linewidth']
         self.vertical_layout = QtWidgets.QVBoxLayout()
         self.button_layout = QtWidgets.QHBoxLayout()
+        self.top_button_layout = QtWidgets.QHBoxLayout()
         self.figure = Figure(tight_layout={'pad':2})
         self.axes = self.figure.add_subplot(111)
         self.canvas = FigureCanvas(self.figure)
@@ -2625,17 +2626,21 @@ class LineCutWindow(QtWidgets.QWidget):
         self.clear_button.clicked.connect(self.clear_lines)
         self.detect_peaks_button = QtWidgets.QPushButton('Detect Peaks')
         self.detect_peaks_button.clicked.connect(self.detect_peaks)
+        if self.multiple_files == False:
+            self.top_button_layout.addWidget(self.save_button)
+        self.top_button_layout.addWidget(self.save_image_button)
+        self.top_button_layout.addWidget(self.copy_image_button)
+        self.top_button_layout.addWidget(self.orientation_button)
+        self.top_button_layout.addStretch()
         if multiple:
             self.init_multiple()
+            self.vertical_layout.addLayout(self.top_button_layout)
+            self.vertical_layout.addLayout(self.control_layout)
         else:
+            self.vertical_layout.addLayout(self.top_button_layout)
             self.canvas.mpl_connect('scroll_event', self.mouse_scroll_canvas)
         self.vertical_layout.addWidget(self.canvas)
         self.vertical_layout.addWidget(self.navi_toolbar)
-        if self.multiple_files == False:
-            self.button_layout.addWidget(self.save_button)
-        self.button_layout.addWidget(self.save_image_button)
-        self.button_layout.addWidget(self.copy_image_button)
-        self.button_layout.addWidget(self.orientation_button)
         self.button_layout.addStretch()
         if self.multiple_files == False:
             self.init_fit()
@@ -2644,7 +2649,7 @@ class LineCutWindow(QtWidgets.QWidget):
                 
     def init_multiple(self):
         self.control_layout = QtWidgets.QHBoxLayout()
-        self.number_label = QtWidgets.QLabel('Number of lines')
+        self.number_label = QtWidgets.QLabel('Number of lines:')
         self.number_line_edit = QtWidgets.QLineEdit('5')
         self.number_line_edit.setFixedSize(40,20)
         self.number_line_edit.editingFinished.connect(self.draw_plots)
@@ -2680,12 +2685,12 @@ class LineCutWindow(QtWidgets.QWidget):
         for cmap_type in self.cmaps:    
             self.colormap_type_box.addItem(cmap_type)
         self.colormap_box.addItems(list(self.cmaps.values())[0])
-        self.control_layout.addStretch()
-        self.control_layout.addWidget(self.colormap_type_box)
-        self.control_layout.addWidget(self.colormap_box)
+        #self.control_layout.addStretch()
+        self.top_button_layout.addWidget(self.colormap_type_box)
+        self.top_button_layout.addWidget(self.colormap_box)
         self.colormap_type_box.currentIndexChanged.connect(self.colormap_type_edited)
         self.colormap_box.currentIndexChanged.connect(self.draw_plots)
-        self.vertical_layout.addLayout(self.control_layout) 
+         
     
     def init_fit(self):
         self.fit_layout = QtWidgets.QHBoxLayout()
@@ -2701,12 +2706,12 @@ class LineCutWindow(QtWidgets.QWidget):
         self.fit_layout.addStretch()
         self.fit_layout.addWidget(self.manual_box)
         self.fit_layout.addWidget(self.guess_edit)
-        self.fit_layout.addWidget(self.pars_label)
-        self.fit_layout.addWidget(self.fit_box)        
+        self.fit_layout.addWidget(self.pars_label) 
+        self.fit_layout.addWidget(self.fit_box)              
         self.vertical_layout.addLayout(self.fit_layout)
-        self.reverse_checkbox = QtWidgets.QCheckBox('Reverse Fit Order')
-        self.reverse_checkbox.setCheckState(QtCore.Qt.Checked)
         if self.multiple and lmfit_imported:
+            self.reverse_checkbox = QtWidgets.QCheckBox('Reverse Fit Order')
+            self.reverse_checkbox.setCheckState(QtCore.Qt.Checked)
             self.button_layout.addWidget(self.reverse_checkbox)
             self.button_layout.addWidget(self.detect_peaks_button)
         self.button_layout.addWidget(self.fit_button)
@@ -2729,12 +2734,19 @@ class LineCutWindow(QtWidgets.QWidget):
                         self.canvas.draw()
              
     def change_orientation(self):
-        if self.parent.orientation == 'horizontal':
-            self.parent.orientation = 'vertical'
-        elif self.parent.orientation == 'vertical':
-            self.parent.orientation = 'horizontal'
-        self.parent.update_linecut()
-        self.parent.canvas.draw()
+        if self.multiple:
+            if self.parent.multi_orientation == 'horizontal':
+                self.parent.multi_orientation = 'vertical'
+            elif self.parent.multi_orientation == 'vertical':
+                self.parent.multi_orientation = 'horizontal'
+            self.parent.update_multiple_linecuts()
+        else:
+            if self.parent.orientation == 'horizontal':
+                self.parent.orientation = 'vertical'
+            elif self.parent.orientation == 'vertical':
+                self.parent.orientation = 'horizontal'
+            self.parent.update_linecut()
+            self.parent.canvas.draw()
              
     def clear_lines(self):
         for line in reversed(self.axes.get_lines()):
