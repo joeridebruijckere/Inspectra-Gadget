@@ -191,6 +191,7 @@ for cmap_type in cmaps.copy():
 class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def __init__(self):
         super(self.__class__, self).__init__()
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
         self.window_title = 'Inspectra Gadget'
         self.window_title_auto_refresh = ''
         self.setupUi(self)
@@ -201,7 +202,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.init_canvas()
         self.linked_folder = None
         self.linked_files = []
-        
+    
     def init_plot_settings(self):
         #font_sizes = ['xx-small','x-small','small','medium','large','x-large','xx-large']
         font_sizes = ['8', '9', '10', '12', '18', '24']
