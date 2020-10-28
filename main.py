@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere
 
-Last updated on Oct 27 2020
+Last updated on Oct 28 2020
 
 """
 
@@ -1930,54 +1930,63 @@ class Data:
             print('load_data')
         if not self.qcodes_file:
             column_data = np.genfromtxt(self.filepath, delimiter=self.settings['delimiter'])
-            self.measured_data_points = column_data.shape[0]
         else:
-            self.dependent_parameters = [p.name for p in self.dataset.dependent_parameters]
-            dependent_par = self.dependent_parameters[self.index_dependent_parameter]
-            data_dict = self.dataset.get_parameter_data(dependent_par)[dependent_par]
-            pars = list(data_dict.keys())
-            if len(pars) == 2: # file is 2D
-                x_par, y_par = pars[1], pars[0]
-                column_data = np.column_stack((data_dict[x_par], data_dict[y_par]))
-            else: # file is 3D
-                x_par, y_par, z_par = pars[1], pars[2], pars[0]
-                column_data = np.column_stack((data_dict[x_par], data_dict[y_par], data_dict[z_par]))
-                self.settings['clabel'] =  '{} ({})'.format(self.dataset.paramspecs[z_par].label, self.dataset.paramspecs[z_par].unit)
-            self.settings['xlabel'] =  '{} ({})'.format(self.dataset.paramspecs[x_par].label, self.dataset.paramspecs[x_par].unit)
-            self.settings['ylabel'] =  '{} ({})'.format(self.dataset.paramspecs[y_par].label, self.dataset.paramspecs[y_par].unit)
-        unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
+            column_data = self.load_qcodes_data()
+        self.measured_data_points = column_data.shape[0]
         
-        if len(indices) > 1: # if first column has more than one unique value
-            # shape of data
-            l0 = np.sort(indices)[1]
-            l1 = len(indices)
-            
-            # ignore last column if unfinished
-            if len(column_data[np.sort(indices)[-1]::,0]) < l0:
-                l1 = l1-1
-                
-            if COMBINATION_GATE_SWEEPS_POSSIBLE: # TODO fix this for general case   
-            # check if subsequent column is also repeated (e.g. for combination gate sweeps)
+        # Determine the number of unique values in the first column to determine the shape of the data (l1,l0)
+        unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
+        sorted_indices = np.sort(indices)
+        l0 = sorted_indices[1]
+        l1 = len(unique_values)
+        
+        # Ignore the data from the last sweep if unfinished
+        if len(column_data[sorted_indices[-1]::,0]) < l0:
+            l1 = l1-1
+        
+        if l1 > 1: # If two or more sweeps are finished
+
+             # Check if second column also has repeated values -> if yes, skip that column
+            if COMBINATION_GATE_SWEEPS_POSSIBLE: # TODO how to do this more generally   
                 if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
                     self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
             
-            # check if file is 2D or 3D
+            # Determine if file is 2D or 3D by checking if first two values in first column are repeated
             if (column_data[1,self.columns[0]] != column_data[0,self.columns[0]]) or len(self.columns) == 2: # if 2D
                 self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
-                if len(self.columns) == 3:
+                if len(self.columns) == 3: # if file is 2D change to two columns
                     self.columns = self.columns[:-1]
             else: # if 3D
-                if indices[1] > indices[0]: # if first column is sorted from low to high --> reshape normally
+                if indices[1] > indices[0]: # If first column is sorted from low to high -> reshape normally
                     self.raw_data = [np.reshape(column_data[:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
-                else: # if first column is sorted from high to low --> flip and then reshape normally
+                else: # If first column is sorted from high to low -> flip and then reshape normally
                     self.raw_data = [np.reshape(column_data[l0*l1-1::-1,x], (l1,l0)) for x in range(column_data.shape[1])]
                     
-                if self.raw_data[1][0,0] > self.raw_data[1][0,1]: # flip is second column is sorted from high to low
+                if self.raw_data[1][0,0] > self.raw_data[1][0,1]: # flip if second column is sorted from high to low
                     self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
                     
-            self.settings['columns'] = ','.join([str(i) for i in self.columns])
-        else: # if first column has only one unique value --> ignore data; set to zero
-            self.raw_data = [np.array([[0,0],[0,0]]) for x in range(column_data.shape[1])]
+        elif l1 == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting 
+            self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]
+            
+        self.settings['columns'] = ','.join([str(i) for i in self.columns])
+            
+    def load_qcodes_data(self):
+        if PRINT_FUNCTION_CALLS:
+            print('load_qcodes_data')
+        self.dependent_parameters = [p.name for p in self.dataset.dependent_parameters]
+        dependent_par = self.dependent_parameters[self.index_dependent_parameter]
+        data_dict = self.dataset.get_parameter_data(dependent_par)[dependent_par]
+        pars = list(data_dict.keys())
+        if len(pars) == 2: # file is 2D
+            x_par, y_par = pars[1], pars[0]
+            column_data = np.column_stack((data_dict[x_par], data_dict[y_par]))
+        else: # file is 3D
+            x_par, y_par, z_par = pars[1], pars[2], pars[0]
+            column_data = np.column_stack((data_dict[x_par], data_dict[y_par], data_dict[z_par]))
+            self.settings['clabel'] =  '{} ({})'.format(self.dataset.paramspecs[z_par].label, self.dataset.paramspecs[z_par].unit)
+        self.settings['xlabel'] =  '{} ({})'.format(self.dataset.paramspecs[x_par].label, self.dataset.paramspecs[x_par].unit)
+        self.settings['ylabel'] =  '{} ({})'.format(self.dataset.paramspecs[y_par].label, self.dataset.paramspecs[y_par].unit)
+        return column_data
 
     def interpret_meta_file(self, meta_data=None, change_labels=True):
         if PRINT_FUNCTION_CALLS:
