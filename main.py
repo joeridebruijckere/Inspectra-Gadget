@@ -72,7 +72,7 @@ DEFAULT_PLOT_SETTINGS['clabel'] = ''
 DEFAULT_PLOT_SETTINGS['titlesize'] = '16'
 DEFAULT_PLOT_SETTINGS['labelsize'] = '16' 
 DEFAULT_PLOT_SETTINGS['ticksize'] = '16'
-DEFAULT_PLOT_SETTINGS['linewidth'] = '1'
+DEFAULT_PLOT_SETTINGS['linewidth'] = '1.5'
 DEFAULT_PLOT_SETTINGS['spinewidth'] = '0.8'
 DEFAULT_PLOT_SETTINGS['columns'] = '0,1,2'
 DEFAULT_PLOT_SETTINGS['colorbar'] = 'True'
@@ -105,7 +105,7 @@ CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
 DEFAULT_VALUE_RCFILTER_CORRECT = False # If True: apply rc-filter correction by default upon loading data
 DEFAULT_RC_FILTER = 8240 # Default resistance rc-filter(s)
 DEFAULT_SHOW_METADATANAME = True
-COMBINATION_GATE_SWEEPS_POSSIBLE = True # TODO fix for general case
+COMBINATION_GATE_SWEEPS_POSSIBLE = False # TODO fix for general case
 CHANNELS_TO_SHOW = ['source', 'g1', 'g2', 'g3', 'g4', 'bg', 'sg', 'Bx', 'Bz', 'T']
 
 #['source', 'g1', 'g1f', 'g2', 'g2f', 'g3', 'g3f', 
@@ -116,7 +116,7 @@ DEFAULT_INDEX_DEPENDENT_PARAMETER = 0 # upon opening a dataset the dependent par
 
 # Editor settings
 PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
-SHOW_ERRORS = True # raise errors for debugging
+SHOW_ERRORS = False # raise errors for debugging
 
 # Matplotlib settings; font type is chosen such that text (labels, ticks, etc.) is recognized by Illustrator
 rcParams['pdf.fonttype'] = 42
@@ -555,13 +555,19 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def refresh_plot(self):
         if PRINT_FUNCTION_CALLS:
             print('refresh_plot')
-        if self.linked_folder:
-            self.update_link_to_folder(new_folder=False)
         current_item = self.file_list.currentItem()
         if current_item:
             data = current_item.data(QtCore.Qt.UserRole)
             data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
             self.update_plots()
+        if self.linked_folder:
+            old_number_of_items = self.file_list.count()
+            self.update_link_to_folder(new_folder=False)
+            if self.file_list.count() > old_number_of_items:
+                last_item = self.file_list.item(self.file_list.count()-1)
+                self.file_double_clicked(last_item)
+                self.file_list.setCurrentItem(last_item)
+                self.track_button_clicked()
             
     def to_next_file(self):
         if PRINT_FUNCTION_CALLS:
@@ -1723,11 +1729,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.figure.subplots_adjust(left=(1+speed*event.step)*self.figure.subplotpars.left)
             elif event.x > 0.75*width:
                 self.figure.subplots_adjust(right=(1+speed*0.5*event.step)*self.figure.subplotpars.right)
-            else:
+            elif event.y < 0.25*height or event.y > 0.75*height:
                 if event.y < 0.25*height:
                     self.figure.subplots_adjust(bottom=(1+speed*event.step)*self.figure.subplotpars.bottom)
                 elif event.y > 0.75*height:
                     self.figure.subplots_adjust(top=(1+speed*0.5*event.step)*self.figure.subplotpars.top)
+            else:
+                self.figure.subplots_adjust(wspace=(1+speed*event.step)*self.figure.subplotpars.wspace)
             self.canvas.draw()
             
     def keyPressEvent(self, event):
@@ -1937,16 +1945,19 @@ class Data:
         # Determine the number of unique values in the first column to determine the shape of the data (l1,l0)
         unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
         sorted_indices = np.sort(indices)
-        l0 = sorted_indices[1]
-        l1 = len(unique_values)
-        
-        # Ignore the data from the last sweep if unfinished
-        if len(column_data[sorted_indices[-1]::,0]) < l0:
-            l1 = l1-1
+        l1 = len(unique_values) # number of sweeps (3D)
+        if l1 > 1:
+            l0 = sorted_indices[1] # number of points in a sweep
+            # Ignore the data from the last sweep if unfinished
+            if len(column_data[sorted_indices[-1]::,0]) < l0:
+                l1 = l1-1
+        else:
+            l0 = column_data.shape[0]
         
         if l1 > 1: # If two or more sweeps are finished
 
-             # Check if second column also has repeated values -> if yes, skip that column
+            # Check if second column also has repeated values -> if yes, skip that column
+            # TODO Fails when 2D plot has first two y-values the same (e.g. when lockin signal is zero)
             if COMBINATION_GATE_SWEEPS_POSSIBLE: # TODO how to do this more generally   
                 if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
                     self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
@@ -1966,7 +1977,11 @@ class Data:
                     self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
                     
         elif l1 == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting 
-            self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]
+            self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]    
+            if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
+                self.raw_data[self.columns[0]][:,1] = unique_values[1]
+            else: # if first sweep is not finished -> set second x-column to arbitrary x-value
+                self.raw_data[self.columns[0]][:,1] = unique_values[0]*1.001
             
         self.settings['columns'] = ','.join([str(i) for i in self.columns])
             
