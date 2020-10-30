@@ -1979,9 +1979,9 @@ class Data:
         elif l1 == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting 
             self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]    
             if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
-                self.raw_data[self.columns[0]][:,1] = unique_values[1]
+                self.raw_data[self.columns[0]][1,:] = unique_values[1]
             else: # if first sweep is not finished -> set second x-column to arbitrary x-value
-                self.raw_data[self.columns[0]][:,1] = unique_values[0]*1.001
+                self.raw_data[self.columns[0]][1,:] = unique_values[0]*1.001
             
         self.settings['columns'] = ','.join([str(i) for i in self.columns])
             
