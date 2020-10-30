@@ -1981,7 +1981,8 @@ class Data:
             if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
                 self.raw_data[self.columns[0]][1,:] = unique_values[1]
             else: # if first sweep is not finished -> set second x-column to arbitrary x-value
-                self.raw_data[self.columns[0]][1,:] = unique_values[0]*1.001
+                self.raw_data[self.columns[0]][0,:] = unique_values[0]-1
+                self.raw_data[self.columns[0]][1,:] = unique_values[0]+1
             
         self.settings['columns'] = ','.join([str(i) for i in self.columns])
             
