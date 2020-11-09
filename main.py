@@ -57,13 +57,14 @@ import design
 import filters
 import fits
 
+# UI settings
 DARK_THEME = True
 AUTO_REFRESH_INTERVAL_2D = 1
 AUTO_REFRESH_INTERVAL_3D = 30
 
 # Set default plot settings
 DEFAULT_COLORMAP = 'magma'
-DEFAULT_REVERSE_COLORMAP = True
+DEFAULT_REVERSE_COLORMAP = False
 DEFAULT_PLOT_SETTINGS = {}
 DEFAULT_PLOT_SETTINGS['title'] = '<filename>'
 DEFAULT_PLOT_SETTINGS['xlabel'] = ''
@@ -79,7 +80,7 @@ DEFAULT_PLOT_SETTINGS['colorbar'] = 'True'
 DEFAULT_PLOT_SETTINGS['minorticks'] = 'False'
 DEFAULT_PLOT_SETTINGS['delimiter'] = ''
 DEFAULT_PLOT_SETTINGS['linecolor'] = 'black'
-DEFAULT_PLOT_SETTINGS['maskcolor'] = 'white'
+DEFAULT_PLOT_SETTINGS['maskcolor'] = 'black'
 DEFAULT_PLOT_SETTINGS['lut'] = '512'
 DEFAULT_PLOT_SETTINGS['rasterized'] = 'True'
 DEFAULT_PLOT_SETTINGS['dpi'] = '300'
@@ -204,7 +205,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.linked_files = []
     
     def init_plot_settings(self):
-        #font_sizes = ['xx-small','x-small','small','medium','large','x-large','xx-large']
         font_sizes = ['8', '9', '10', '12', '18', '24']
         self.settings_menu_list = OrderedDict()
         self.settings_menu_list['title'] = ['<filename>','<metadataname>']
@@ -502,7 +502,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             if SHOW_ERRORS:
                 raise
     
-    def update_plots(self):
+    def update_plots(self, reset_view_settings=True):
         if PRINT_FUNCTION_CALLS:
             print('update_plots')
         self.figure.clear()
@@ -531,7 +531,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         data.add_plot_2d()
                     else:
                         data.add_plot()
-                        data.reset_view_settings()
+                        if reset_view_settings:
+                            data.reset_view_settings()
                         data.apply_view_settings()
                         try:
                             data.linecut_window
@@ -645,7 +646,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         last_item = self.file_list.item(self.file_list.count()-1)
         data = last_item.data(QtCore.Qt.UserRole)
         if last_item.checkState() == 2 and data.last_modified_time:
-            if datetime.now().timestamp() - data.last_modified_time > 120 or data.progress_fraction == 1:
+            if datetime.now().timestamp() - data.last_modified_time > 600 or data.progress_fraction == 1:
                 print('Stop auto refresh...')
                 data.remaining_time_string = ''
                 self.stop_auto_refresh()
@@ -1484,16 +1485,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                                         if checked_item.data(QtCore.Qt.UserRole).cbar.ax == event.inaxes]
                     if self.cbar_in_focus:
                         data = self.cbar_in_focus[0].data(QtCore.Qt.UserRole)
-                        min_map = data.view_settings['Minimum']
-                        max_map = data.view_settings['Maximum']
-                        new_value = min_map + y*(max_map-min_map)
                         if event.button == 1:
-                            data.view_settings['Minimum'] = new_value
+                            data.view_settings['Minimum'] = y
                             data.reset_midpoint()
                         elif event.button == 2:
-                            data.view_settings['Midpoint'] = new_value
+                            data.view_settings['Midpoint'] = y
                         elif event.button == 3:
-                            data.view_settings['Maximum'] = new_value
+                            data.view_settings['Maximum'] = y
                             data.reset_midpoint()
                         data.apply_view_settings()
                         self.canvas.draw()
@@ -1626,7 +1624,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.show_current_all()
       
     def hide_linecuts(self, plot_data):
-        plot_data.linecut_window.running = False         
+        try:
+            plot_data.linecut_window.running = False
+        except AttributeError:
+            pass
         for line in reversed(plot_data.axes.get_lines()):
             line.remove()
             del line
@@ -1652,7 +1653,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             rcParams['axes.facecolor'] = 'white'
             rcParams['axes.edgecolor'] = 'black'
             rcParams['axes.labelcolor'] = 'black'
-            self.update_plots()           
+            self.update_plots(reset_view_settings=False)
         buf = io.BytesIO()
         try:
             dpi = int(plot_data.settings['dpi'])
@@ -1673,7 +1674,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             rcParams['xtick.color'] = LIGHT_COLOR
             rcParams['ytick.color'] = LIGHT_COLOR
             rcParams['axes.labelcolor'] = LIGHT_COLOR
-            self.update_plots() 
+            self.update_plots(reset_view_settings=False)
             
     def mouse_scroll_canvas(self, event):
         if PRINT_FUNCTION_CALLS:
@@ -1933,7 +1934,7 @@ class Data:
                     'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP} 
 
         
-    def load_data(self): # TODO: Properly handle files that have not completed the first two sweeps
+    def load_data(self):
         if PRINT_FUNCTION_CALLS:
             print('load_data')
         if not self.qcodes_file:
@@ -1943,7 +1944,15 @@ class Data:
         self.measured_data_points = column_data.shape[0]
         
         # Determine the number of unique values in the first column to determine the shape of the data (l1,l0)
-        unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
+        # TODO fix IndexError: index 0 is out of bounds for axis 0 with size 0 --> check if fixed!
+        # TODO fix IndexError: tuple index out of range at self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]
+        if column_data.ndim == 1: # if empty array or only one row has been written
+            if column_data.size == 0: # if empty array
+                unique_values, indices = np.array([0]), np.array([0])
+            else: # if only one row has been written
+                unique_values, indices = np.array([column_data[self.columns[0]]]), np.array([0])
+        elif column_data.ndim == 2: # if at least two rows are written
+            unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
         sorted_indices = np.sort(indices)
         l1 = len(unique_values) # number of sweeps (3D)
         if l1 > 1:
@@ -1976,13 +1985,17 @@ class Data:
                 if self.raw_data[1][0,0] > self.raw_data[1][0,1]: # flip if second column is sorted from high to low
                     self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
                     
-        elif l1 == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting 
-            self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]    
-            if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
-                self.raw_data[self.columns[0]][1,:] = unique_values[1]
-            else: # if first sweep is not finished -> set second x-column to arbitrary x-value
-                self.raw_data[self.columns[0]][0,:] = unique_values[0]-1
-                self.raw_data[self.columns[0]][1,:] = unique_values[0]+1
+        elif l1 == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting
+            if column_data.size == 0:
+                self.raw_data = [np.array([]) for x in range(12)]
+            else:
+                self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]    
+                if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
+                    self.raw_data[self.columns[0]][0,:] = unique_values[0]
+                    self.raw_data[self.columns[0]][1,:] = unique_values[1]
+                else: # if first sweep is not finished -> set duplicate x-columns to +1 and -1 of actual value
+                    self.raw_data[self.columns[0]][0,:] = unique_values[0]-1
+                    self.raw_data[self.columns[0]][1,:] = unique_values[0]+1
             
         self.settings['columns'] = ','.join([str(i) for i in self.columns])
             
@@ -2127,6 +2140,7 @@ class Data:
         except KeyError:
             bound_from = self.meta_data['job']['job']['from']
             bound_to = self.meta_data['job']['job']['to']
+        self.measurement_bounds = [bound_from, bound_to]
         
         # Get total number of (to be) measured data points
         self.total_data_points = 1 
@@ -2992,7 +3006,11 @@ class LineCutWindow(QtWidgets.QWidget):
         self.running = True
         self.figure.clear()
         self.axes = self.figure.add_subplot(111)
-        self.offset = float(self.offset_line_edit.text())
+        try:
+            self.offset = float(self.offset_line_edit.text())
+        except:
+            self.offset = 0
+            self.offset_line_edit.setText('0')
         selected_colormap = cm.get_cmap(self.colormap_box.currentText())
         
         if self.multiple_files:
@@ -3129,7 +3147,10 @@ class LineCutWindow(QtWidgets.QWidget):
             rcParams['xtick.color'] = 'black'
             rcParams['ytick.color'] = 'black'
             rcParams['axes.labelcolor'] = 'black'
-            self.parent.update_linecut()           
+            if self.multiple:
+                self.parent.update_multiple_linecuts()
+            else:
+                self.parent.update_linecut()           
         buf = io.BytesIO()
         self.figure.savefig(buf, dpi=300, transparent=True, bbox_inches='tight')
         QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
@@ -3144,7 +3165,10 @@ class LineCutWindow(QtWidgets.QWidget):
             rcParams['xtick.color'] = LIGHT_COLOR
             rcParams['ytick.color'] = LIGHT_COLOR
             rcParams['axes.labelcolor'] = LIGHT_COLOR
-            self.parent.update_linecut()
+            if self.multiple:
+                self.parent.update_multiple_linecuts()
+            else:
+                self.parent.update_linecut() 
             
     def mouse_scroll_canvas(self, event):
         if event.inaxes:
@@ -3167,6 +3191,7 @@ class ParametersWindow(QtWidgets.QWidget):
         super(self.__class__, self).__init__()
         self.resize(600, 600)
         self.vertical_layout = QtWidgets.QVBoxLayout()
+        self.button_layout = QtWidgets.QHBoxLayout()
         self.figure = Figure()
         self.axes = self.figure.add_subplot(111)
         self.canvas = FigureCanvas(self.figure)
@@ -3186,8 +3211,10 @@ class ParametersWindow(QtWidgets.QWidget):
         self.save_image_button.clicked.connect(self.save_image)
         self.vertical_layout.addWidget(self.navi_toolbar)
         self.vertical_layout.addWidget(self.canvas)
-        self.vertical_layout.addWidget(self.save_button)
-        self.vertical_layout.addWidget(self.save_image_button)
+        self.button_layout.addStretch()
+        self.button_layout.addWidget(self.save_button)
+        self.button_layout.addWidget(self.save_image_button)
+        self.vertical_layout.addLayout(self.button_layout)
         self.setLayout(self.vertical_layout)
         
     def save_data(self):
