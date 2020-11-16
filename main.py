@@ -1944,7 +1944,6 @@ class Data:
         self.measured_data_points = column_data.shape[0]
         
         # Determine the number of unique values in the first column to determine the shape of the data (l1,l0)
-        # TODO fix IndexError: index 0 is out of bounds for axis 0 with size 0 --> check if fixed!
         # TODO fix IndexError: tuple index out of range at self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]
         if column_data.ndim == 1: # if empty array or only one row has been written
             if column_data.size == 0: # if empty array
