@@ -20,11 +20,11 @@ import main
 # Default settings Matlab qd data
 DEFAULT_CHANNEL = 'lockin_curr/X' # Channel shown by default
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True # Whether or not to convert dI/dV from uS to e^2/h by default
-DEFAULT_RC_FILTER_CORRECT = False # Whether or not to apply RC-filter correction by default
+DEFAULT_RC_FILTER_CORRECT = True # Whether or not to apply RC-filter correction by default
 DEFAULT_RC_FILTER_VALUE = 8240
 DEFAULT_SHOW_FULL_RANGE = False # Adjust limits of plot to its final size by default
 DEFAULT_SHOW_SETTINGS_LIST = True
-CHANNELS_TO_SHOW = ['source', 'g1', 'g2', 'g3', 'g4', 'bg', 'sg', 'Bx', 'Bz', 'T']
+CHANNELS_TO_SHOW = ['source', 'pg1', 'pg2', 'cg1', 'cg2', 'bg', 'Bx', 'Bz', 'T']
 
 LABEL_DICT = {'source': ('Bias voltage', '(mV)'), 
               'dc_curr': ('Current', '(nA)'), 
@@ -54,13 +54,12 @@ class QdData(main.BaseClassData):
         self.rc_filter_correct = DEFAULT_RC_FILTER_CORRECT
         self.show_full_range = DEFAULT_SHOW_FULL_RANGE
         
-        self.interpret_meta_file()
+        self.channels = [channel['name'] for channel in self.meta['columns']]
         self.construct_settings_list()
         self.set_measurement_bounds()
         self.determine_total_data_points()
         
-    def interpret_meta_file(self):         
-        self.channels = [channel['name'] for channel in self.meta['columns']] 
+    def set_default_channel(self):
         try:
             new_index = self.channels.index(DEFAULT_CHANNEL)
             columns = self.settings['columns'].split(',')
@@ -97,6 +96,18 @@ class QdData(main.BaseClassData):
                                         value = instrument['current_values']['v']
                                         self.settings_string += f'{channel}: {value:.3g} \n'
                                         break
+                            elif register_channel['instrument'] == 'smua2':
+                                for instrument in self.meta['register']['instruments']:
+                                    if instrument['name'] == 'smua2' and 'current_values' in instrument.keys():
+                                        value = instrument['current_values']['v']
+                                        self.settings_string += f'{channel}: {value:.3g} \n'
+                                        break
+                            elif register_channel['instrument'] == 'smub2':
+                                for instrument in self.meta['register']['instruments']:
+                                    if instrument['name'] == 'smub2' and 'current_values' in instrument.keys():
+                                        value = instrument['current_values']['v']
+                                        self.settings_string += f'{channel}: {value:.3g} \n'
+                                        break
                     else:
                         if channel == 'Bx' or channel == 'Bz':
                             for instrument in self.meta['register']['instruments']:
@@ -113,20 +124,26 @@ class QdData(main.BaseClassData):
             except:
                 print(f'Could not add channel {channel}...')      
     
-    def prepare_data_for_plot(self, reload=False):
-        if not hasattr(self, 'raw_data') or reload:
+    def prepare_data_for_plot(self, reload_data=False):
+        if not hasattr(self, 'raw_data'):
             self.load_and_reshape_data()
-            reload = True
-        self.copy_raw_to_processed_data()
-        self.process_four_terminal_data()
-        if self.rc_filter_correct:
-            self.correct_for_rcfilters()
-        if reload:
-            self.filters = []
-            self.unit_conversion()
-            self.reset_labels()
-        self.apply_all_filters()
-        self.update_progress()
+            self.set_default_channel()
+            reload_data = True
+        elif reload_data:
+            self.load_and_reshape_data()
+        if self.raw_data:
+            self.copy_raw_to_processed_data()
+            self.process_four_terminal_data()
+            if self.rc_filter_correct:
+                self.correct_for_rcfilters()
+            if reload_data:
+                self.filters = []
+                self.reset_labels()
+                self.unit_conversion()
+            self.apply_all_filters()
+            self.update_progress()
+        else:
+            self.processed_data = None
         
     def set_measurement_bounds(self, rescale=1, offset=0):
         # Get bounds to be able to show full range during measurement
@@ -158,33 +175,39 @@ class QdData(main.BaseClassData):
         if 'points' in self.meta['job']['job']:
             self.total_data_points *= self.meta['job']['job']['points']
     
-    def correct_for_rcfilters(self):           
+    def correct_for_rcfilters(self):
         columns = self.get_columns()
         if 'source' in self.channels and 'dc_curr' in self.channels:
-            source_index = self.channels.index('source')
-            if source_index in columns:
-                source_divider = self.meta['setup']['meta']['source_divider']
-                curr_index = self.channels.index('dc_curr')                    
-                curr_amp = self.meta['setup']['meta']['current_amp']
-                source_data = self.raw_data[source_index] / source_divider
-                curr_data = self.raw_data[curr_index] / curr_amp
-                source_corrected = (source_data - float(self.settings['rc-filter'])*curr_data)*source_divider
-                self.processed_data[columns.index(source_index)] = np.copy(source_corrected)
+            try:
+                source_index = self.channels.index('source')
+                if source_index in columns:
+                    source_divider = self.meta['setup']['meta']['source_divider']
+                    curr_index = self.channels.index('dc_curr')                    
+                    curr_amp = self.meta['setup']['meta']['current_amp']
+                    source_data = self.raw_data[source_index] / source_divider
+                    curr_data = self.raw_data[curr_index] / curr_amp
+                    source_corrected = (source_data - float(self.settings['rc-filter'])*curr_data)*source_divider
+                    self.processed_data[columns.index(source_index)] = np.copy(source_corrected)
+            except Exception as e:
+                print('Could not perform rc-filter correction for source...', e)
         
         if 'lockin_curr/X' in self.channels:
-            lockin_index = self.channels.index('lockin_curr/X')
-            if lockin_index in columns:
-                for instrument in self.meta['register']['instruments']:
-                    if instrument['name'] == 'lockin_curr':
-                        break
-                sine_amplitude = float(instrument['config']['SLVL'])
-                lockin_divider = self.meta['setup']['meta']['lock_sig_divider']
-                curr_amp = self.meta['setup']['meta']['current_amp']
-                conversion = curr_amp*sine_amplitude/lockin_divider # divide by this to convert lockin-signal to Siemens (1/Ohm)
-                lockin_data = self.raw_data[lockin_index]/conversion # in Siemens
-                series_resistance = float(self.settings['rc-filter']) # in Ohm
-                lockin_corrected = lockin_data/(1.-series_resistance*lockin_data)*conversion
-                self.processed_data[columns.index(lockin_index)] = np.copy(lockin_corrected)  
+            try:
+                lockin_index = self.channels.index('lockin_curr/X')
+                if lockin_index in columns:
+                    for instrument in self.meta['register']['instruments']:
+                        if instrument['name'] == 'lockin_curr':
+                            break
+                    sine_amplitude = float(instrument['config']['SLVL'])
+                    lockin_divider = self.meta['setup']['meta']['lock_sig_divider']
+                    curr_amp = self.meta['setup']['meta']['current_amp']
+                    conversion = curr_amp*sine_amplitude/lockin_divider # divide by this to convert lockin-signal to Siemens (1/Ohm)
+                    lockin_data = self.raw_data[lockin_index]/conversion # in Siemens
+                    series_resistance = float(self.settings['rc-filter']) # in Ohm
+                    lockin_corrected = lockin_data/(1.-series_resistance*lockin_data)*conversion
+                    self.processed_data[columns.index(lockin_index)] = np.copy(lockin_corrected)
+            except Exception as e:
+                print('Could not perform rc-filter correction for lockin_curr/X...', e)
 
     def unit_conversion(self):
         columns = self.get_columns()
@@ -282,7 +305,7 @@ class QdData(main.BaseClassData):
         columns = self.get_columns()
         self.settings['xlabel'] = self.channels[columns[0]]
         self.settings['ylabel'] = self.channels[columns[1]]
-        self.settings['clabel'] = self.channels[columns[2]]         
+        self.settings['clabel'] = self.channels[columns[-1]]         
     
         for index, channel in enumerate([self.channels[x] for x in columns]):
             label = ['xlabel', 'ylabel', 'clabel'][index]
@@ -322,8 +345,17 @@ class QdData(main.BaseClassData):
     def apply_plot_settings(self):
         super().apply_plot_settings()
         if self.settings['title'] == '<label>':
-            self.axes.set_title("\n".join(wrap(self.label,60)), 
+            self.axes.set_title("\n".join(wrap(self.label,80)), 
                                 size=self.settings['titlesize'])
+     
+    def file_finished(self):
+        if (hasattr(self, 'last_modified_time') and
+            hasattr(self, 'progress_fraction')):
+            return ((datetime.now().timestamp() - 
+                     self.last_modified_time > 600) or 
+                    self.progress_fraction == 1)
+        else:
+            return False
         
     def update_progress(self):
         self.progress_fraction = (self.measured_data_points /
@@ -338,12 +370,12 @@ class QdData(main.BaseClassData):
         percentage = int(self.progress_fraction*100)
         remaining_time = str(remaining_datetime).split('.')[0]
         finish_time = str(datetime.now()+remaining_datetime).split('.')[0]
-        self.remaining_time_string = (f'  {percentage}% Completed  -  Remaining time:  '
+        self.remaining_time_string = (f'  {percentage}% Completed  -  Remaining time: '
                                       f'{remaining_time}  -  Finishes at: {finish_time}')
 
     def extension_setting_edited(self, editor, setting_name):
         if setting_name == 'rc-filter':
-            self.prepare_data_for_plot(reload=True)
+            self.prepare_data_for_plot(reload_data=True)
             editor.update_plots()
         elif setting_name == 'showsettings':
             editor.update_plots()
@@ -360,7 +392,7 @@ class QdData(main.BaseClassData):
             action = QtWidgets.QAction('Enable RC-filter correction...', editor)
         menu.addAction(action)  
         
-        if hasattr(self, 'draw_full_range') and self.draw_full_range:
+        if hasattr(self, 'show_full_range') and self.show_full_range:
             action = QtWidgets.QAction('Show measured range...', editor)
         else:
             action = QtWidgets.QAction('Show full range...', editor)                                
@@ -370,12 +402,12 @@ class QdData(main.BaseClassData):
     def do_extension_actions(self, editor, signal):
         if signal.text() == 'Enable RC-filter correction...':
             self.rc_filter_correct = True
-            self.prepare_data_for_plot(reload=True)
+            self.prepare_data_for_plot(reload_data=True)
             editor.update_plots()
         elif signal.text() == 'Disable RC-filter correction...':
             self.rc_filter_correct = False
             #self.refresh_data()
-            self.prepare_data_for_plot(reload=True)
+            self.prepare_data_for_plot(reload_data=True)
             editor.update_plots()
         elif signal.text() in self.channels:
             channel_index = self.channels.index(signal.text())
@@ -384,16 +416,16 @@ class QdData(main.BaseClassData):
                 self.settings['ylabel'] = signal.text()
             else:                
                 self.settings['clabel'] = signal.text()
-            self.prepare_data_for_plot(reload=True)
+            self.prepare_data_for_plot(reload_data=True)
             editor.update_plots()
             editor.show_current_all()
         elif signal.text() == 'Show full range...':
-            self.draw_full_range = True
+            self.show_full_range = True
             self.axes.set_xlim(left=min(self.measurement_bounds), 
                                right=max(self.measurement_bounds))
             editor.canvas.draw()
         elif signal.text() == 'Show measured range...':
-            self.draw_full_range = False
+            self.show_full_range = False
             self.axes.set_xlim(left=np.amin(self.processed_data[0]), 
                                right=np.amax(self.processed_data[0]))
             editor.canvas.draw()

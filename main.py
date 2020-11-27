@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere
 
-Last updated on Nov 18 2020
+Last updated on Nov 27 2020
 
 """
 
@@ -14,7 +14,6 @@ import os
 import copy
 import io
 from stat import ST_CTIME
-from datetime import datetime
 import numpy as np
 from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
@@ -277,7 +276,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_refresh_stop.setEnabled(False)
         self.action_link_to_folder.triggered.connect(lambda: self.update_link_to_folder(new_folder=True))
         self.action_unlink_folder.triggered.connect(self.unlink_folder)
-        self.refresh_file_button.clicked.connect(self.update_plots)
+        self.refresh_file_button.clicked.connect(self.refresh_files)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
         self.down_file_button.clicked.connect(lambda: self.move_file('down'))
         self.file_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -295,6 +294,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                              (3,4),(3,4),(3,4),(3,4),(4,4),(4,4),(4,4),(4,4),
                              (4,5),(4,5),(4,5),(4,5),(4,5),(5,5),(5,5),(5,5),
                              (5,5)]
+        self.figure.subplots_adjust(top=0.893, bottom=0.137, 
+                                    left=0.121, right=0.86)
 
     def open_files(self, filepaths=None):
         self.file_list.itemChanged.disconnect(self.file_checked)
@@ -341,7 +342,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         self.file_list.addItem(item)
                 except Exception as e:
                     print(f'Failed to open {filepath}...', e)
-                    raise
 
             if self.file_list.count() > 0:
                 last_item = self.file_list.item(self.file_list.count()-1)
@@ -410,11 +410,18 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     raise
         self.show_current_all()
         self.canvas.draw()
+        last_item = self.file_list.item(self.file_list.count()-1)
+        if (last_item.checkState() and self.track_button.text() == 'Stop' and 
+            hasattr(last_item.data, 'remaining_time_string')):
+            self.remaining_time_label.setText(last_item.data.remaining_time_string)
+        else:
+            self.remaining_time_label.setText('')
           
     def refresh_files(self):
-        current_item = self.file_list.currentItem()
-        if current_item:
-            current_item.data.prepare_data_for_plot(reload=True)
+        checked_items = self.get_checked_items()
+        if checked_items:
+            for item in checked_items:
+                item.data.prepare_data_for_plot(reload_data=True)
             self.update_plots()
         if self.linked_folder:
             old_number_of_items = self.file_list.count()
@@ -430,7 +437,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if (len(checked_items) == 1 and self.file_list.count() > 1 and 
             indices[0]+1 < self.file_list.count()):
             item = checked_items[0]
-            next_item = self.file_list.item(indices[1]+1)
+            next_item = self.file_list.item(indices[0]+1)
             self.file_list.itemChanged.disconnect(self.file_checked)
             item.setCheckState(QtCore.Qt.Unchecked)
             next_item.setCheckState(QtCore.Qt.Checked)
@@ -463,51 +470,60 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def track_button_clicked(self):
         if self.track_button.text() == 'Track':
             last_item = self.file_list.item(self.file_list.count()-1)
-            if len(last_item.data.get_columns()) == 2: # if file is 2D
-                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
-            else: # if file is 3D
-                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
+            if last_item:
+                last_item.data.prepare_data_for_plot(reload_data=True)
+                if last_item.data.raw_data:
+                    if len(last_item.data.get_columns()) == 3: # if file is 3D
+                        self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
+                    elif len(last_item.data.get_columns()) == 2: # if file is 2D
+                        self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
+                else:
+                    self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D, 
+                                            wait_for_file=True)
         elif self.track_button.text() == 'Stop':
             self.stop_auto_refresh()
         
-    def start_auto_refresh(self, time_interval):
+    def start_auto_refresh(self, time_interval, wait_for_file=False):
         self.track_button.setText('Stop')
         self.auto_refresh_timer = QtCore.QTimer()
         self.auto_refresh_timer.setInterval(time_interval*1000)
-        self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
+        if wait_for_file:
+            self.auto_refresh_timer.timeout.connect(self.wait_for_file_call)
+        else:
+            self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
         self.action_refresh_stop.setEnabled(True)
         self.auto_refresh_timer.start()
         self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
         self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
         self.auto_refresh_call()
         
-    def auto_refresh_call(self):
-        if self.linked_folder:
-            self.update_link_to_folder(new_folder=False)
-        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled (Refreshing...)'
-        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
-        checked_items = self.get_checked_items()       
-        # Refresh all checked items
-        for item in checked_items:
-            item.data.prepare_data_for_plot()
-        self.update_plots()
-        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
-        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)        
-        
-        # Update progress of last item (if checked)
+    def wait_for_file_call(self):
         last_item = self.file_list.item(self.file_list.count()-1)
-        if last_item.checkState() == 2 and last_item.data.last_modified_time:
-            if (datetime.now().timestamp() - 
-                last_item.data.last_modified_time > 600 
-                or last_item.data.progress_fraction == 1):
+        if last_item.checkState():
+            last_item.data.prepare_data_for_plot(reload_data=True)
+            if last_item.data.raw_data:
+                self.auto_refresh_timer.stop()
+                self.track_button.setText('Track')
+                self.track_button_clicked()            
+            
+    def auto_refresh_call(self):
+        last_item = self.file_list.item(self.file_list.count()-1)
+        if last_item.checkState():
+            if last_item.data.file_finished():
                 print('Stop auto refresh...')
                 last_item.data.remaining_time_string = ''
                 self.stop_auto_refresh()
             else:
-                self.remaining_time_label.setText(last_item.data.remaining_time_string)
-        else:
-            self.remaining_time_label.setText('')
-            
+                if hasattr(last_item.data, 'remaining_time_string'):
+                    self.remaining_time_label.setText(last_item.data.remaining_time_string)
+                else:
+                    self.remaining_time_label.setText('')
+            self.window_title_auto_refresh = ' - Auto-Refreshing Enabled (Refreshing...)'
+            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+            self.refresh_files()
+            self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
+            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+        
     def stop_auto_refresh(self):
         self.track_button.setText('Track')
         self.auto_refresh_timer.stop()
@@ -609,7 +625,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.settings_table.clearFocus()
             try:
                 if setting_name == 'columns' or setting_name == 'delimiter':
-                    current_item.data.prepare_data_for_plot(reload=True)
+                    current_item.data.prepare_data_for_plot(reload_data=True)
                     self.update_plots()           
                 elif setting_name == 'linecolor':
                     for line in current_item.data.axes.get_lines():
@@ -1040,24 +1056,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             new_files.append((os.stat(filepath)[ST_CTIME],filepath))
             if new_files:
                 new_files.sort(key=lambda tup: tup[0])
-                self.file_list.di
-                for new_file in new_files:
-                    try:
-                        print('Open', new_file[1])
-                        self.add_file(new_file[1], do_load_data=False)
-                        self.linked_files.append(new_file[1])
-                    except Exception as e:
-                        print('Could not open', new_file[1], e)
-                        continue
-                if new_folder:
-                    self.file_list.itemChanged.disconnect(self.file_checked)
-                    for index in range(self.file_list.count()):
-                        self.file_list.item(index).setCheckState(QtCore.Qt.Unchecked)
-                    last_item = self.file_list.item(self.file_list.count()-1)
-                    self.file_list.setCurrentItem(last_item)
-                    last_item.setCheckState(QtCore.Qt.Checked)
-                    self.file_list.itemChanged.connect(self.file_checked)
-                    self.file_checked(last_item)
+                new_filepaths = [new_file[1] for new_file in new_files]
+                self.open_files(new_filepaths)
+                for new_filepath in new_filepaths:
+                    self.linked_files.append(new_filepath)               
                     
     def unlink_folder(self):
         if self.linked_folder:
@@ -1070,9 +1072,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if self.navi_toolbar.mode == '': # If not using the navigation toolbar tools
             if event.inaxes:
                 x, y = event.xdata, event.ydata
-                self.plot_in_focus = [self.file_list.item(index) for index 
-                                      in range(self.file_list.count()) 
-                                      if self.file_list.item(index).data.axes == event.inaxes]
+                checked_items = self.get_checked_items()
+                self.plot_in_focus = [checked_item for checked_item in checked_items 
+                                      if checked_item.data.axes == event.inaxes]
                 if self.plot_in_focus:
                     data = self.plot_in_focus[0].data
                     data.selected_x, data.selected_y = x, y
@@ -1109,9 +1111,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             
                         # Add actions from extension modules
                         data.add_extension_actions(self, rightclick_menu)
-
+                        actions = []
                         if len(data.get_columns()) == 3:
-                            actions = []
                             actions.append(QtWidgets.QAction('Draw diagonal linecut...', self))
                             #data.linecut_from = [x, y]
                             actions.append(QtWidgets.QAction('Draw circular linecut...', self))
@@ -1125,7 +1126,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         rightclick_menu.popup(QtGui.QCursor.pos())
                 
                 else: # if colorbar in focus
-                    checked_items = self.get_checked_items()
                     self.cbar_in_focus = [checked_item for checked_item in checked_items
                                           if checked_item.data.cbar.ax == event.inaxes]
                     if self.cbar_in_focus:
@@ -1224,9 +1224,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def mouse_scroll_canvas(self, event):
         if event.inaxes:
             y = event.ydata
-            self.plot_in_focus = [self.file_list.item(index) for index 
-                                  in range(self.file_list.count()) 
-                                  if self.file_list.item(index).data.axes == event.inaxes]
+            checked_items = self.get_checked_items()
+            self.plot_in_focus = [checked_item for checked_item in checked_items 
+                                  if checked_item.data.axes == event.inaxes]
             if self.plot_in_focus:
                 data = self.plot_in_focus[0].data
                 if len(data.get_columns()) == 3:
@@ -1243,7 +1243,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         data.linecut_window.update()
                         self.canvas.draw()
             else:
-                checked_items = self.get_checked_items()
                 self.cbar_in_focus = [checked_item for checked_item in checked_items
                                       if checked_item.data.cbar.ax == event.inaxes]
                 if self.cbar_in_focus:
@@ -1377,7 +1376,7 @@ class BaseClassData:
     DEFAULT_PLOT_SETTINGS['xlabel'] = ''
     DEFAULT_PLOT_SETTINGS['ylabel'] = ''
     DEFAULT_PLOT_SETTINGS['clabel'] = ''
-    DEFAULT_PLOT_SETTINGS['titlesize'] = '12'
+    DEFAULT_PLOT_SETTINGS['titlesize'] = '14'
     DEFAULT_PLOT_SETTINGS['labelsize'] = '14' 
     DEFAULT_PLOT_SETTINGS['ticksize'] = '14'
     DEFAULT_PLOT_SETTINGS['linewidth'] = '1.5'
@@ -1441,7 +1440,7 @@ class BaseClassData:
             if len(unique_values) > 1:
                 sorted_indices = sorted(unique_indices)
                 if len(column_data[sorted_indices[-1]::,0]) < sorted_indices[1]:
-                    # Ignore the data from the last sweep if unfinished
+                    # Ignore the data from the last sweep if unfinished # TODO improve (fill unfinished with nans)
                     data_shape = (len(unique_values)-1, sorted_indices[1])
                 else:
                     data_shape = (len(unique_values), sorted_indices[1])
@@ -1453,6 +1452,7 @@ class BaseClassData:
                 # Check if second column also has unique values at the same 
                 # indices as the first column; if yes, skip that column.
                 # Relevant for measurements where two parameters are swept simultaneously
+                # TODO Fix: this goes wrong for 2D plots where the second column is monotonically increasing (e.g. IV-curve of a resistor)
                 _, next_unique_indices = np.unique(column_data[:,columns[1]], 
                                                    return_index=True)
                 if (np.array_equal(unique_indices, next_unique_indices) or
@@ -1464,7 +1464,7 @@ class BaseClassData:
                 # Determine if file is 2D or 3D by checking if first two values in first column are repeated
                 if column_data[1,columns[0]] != column_data[0,columns[0]] or len(columns) == 2:
                     self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
-                    columns = columns[0,1]
+                    columns = columns[:2]
                 else: 
                     # flip if first column is sorted from high to low 
                     if unique_values[1] < unique_values[0]: 
@@ -1488,8 +1488,8 @@ class BaseClassData:
     def copy_raw_to_processed_data(self):
         self.processed_data = [np.copy(self.raw_data[x]) for x in self.get_columns()]
 
-    def prepare_data_for_plot(self, reload=False):
-        if not hasattr(self, 'raw_data') or reload:
+    def prepare_data_for_plot(self, reload_data=False):
+        if not hasattr(self, 'raw_data') or reload_data:
             self.load_and_reshape_data()
         if self.raw_data:
             self.copy_raw_to_processed_data()
@@ -1617,6 +1617,9 @@ class BaseClassData:
     def do_extension_actions(self, editor, menu):
         pass
         
+    def file_finished(self):
+        return False
+    
     def hide_linecuts(self):
         if hasattr(self, 'linecut_window'):
             self.linecut_window.running = False
@@ -1659,7 +1662,7 @@ class NumpyData(BaseClassData):
     def setup_raw_data(self):
         self.raw_data = self.dataset['Raw Data']
 
-    def prepare_data_for_plot(self, reload=False):
+    def prepare_data_for_plot(self, reload_data=False):
         self.copy_raw_to_processed_data()
         self.apply_all_filters()
 
