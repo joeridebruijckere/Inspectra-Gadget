@@ -9,44 +9,6 @@ import numpy as np
 from scipy import ndimage, signal
 from scipy.interpolate import interp1d, interp2d
 
-def apply(data, filter_settings):
-    filter_functions = {'Derivative': derivative, 'Smoothen': smooth, 'Sav-Gol': sav_gol, 
-                       'Crop X': crop_x, 'Crop Y': crop_y, 'Roll X': roll_x, 
-                       'Roll Y': roll_y, 'Cut X': cut_x, 'Cut Y': cut_y, 
-                       'Swap XY': swap_xy, 'Flip': flip, 
-                       'Normalize': normalize, 'Offset': offset, 
-                       'Absolute': absolute, 'Multiply': mulitply, 'Slope': slope, 
-                       'Logarithm': logarithm, 'Band cut': band_cut, 'Interp': interpolate,
-                       'Subtract': subtract_trace, 'Divide': divide, 'Invert': invert}
-    filtered_data = filter_functions[filter_settings['Name']](data, filter_settings['Method'],
-                           filter_settings['Setting 1'], filter_settings['Setting 2'])
-    return filtered_data
-    
-def get_list(filter_name=''):
-    filter_methods = {
-            'Derivative': ['Midpoint'], 
-            'Smoothen': ['Gaussian', 'Median'],
-            'Sav-Gol': ['Y deriv 0', 'Y deriv 1', 'Y deriv 2', 
-                        'X deriv 0', 'X deriv 1', 'X deriv 2'],
-            'Crop X': ['Absolute', 'Relative'], 
-            'Crop Y': ['Absolute', 'Relative'],
-            'Roll X': ['Index'], 
-            'Roll Y': ['Index'],
-            'Cut X': ['Index'], 
-            'Cut Y': ['Index'],
-            'Swap XY': [], 'Flip': ['Left Right','Up Down'], 
-            'Normalize': ['Minimum', 'Maximum', 'Point'], 
-            'Offset': ['X','Y','Z'], 'Absolute': [], 'Multiply': ['X','Y','Z'], 
-            'Slope': [], 'Logarithm': ['Mask','Shift','Abs'],
-            'Band cut': ['Y', 'X'], 'Interp': ['linear','cubic','quintic'],
-            'Subtract': ['Vertical', 'Horizontal'], 'Divide': ['X','Y','Z'],
-            'Invert': ['X','Y','Z']}
-    if filter_name:
-        return_list = filter_methods[filter_name]
-    else:
-        return_list = filter_methods.keys()
-    return return_list
-
 def derivative(data, method, times_x, times_y):
     times_x, times_y = int(times_x), int(times_y)
     if len(data) == 3:
@@ -60,11 +22,11 @@ def derivative(data, method, times_x, times_y):
     return data                       
         
 def smooth(data, method, width_x, width_y):
-    filters = {'Gaussian': ndimage.gaussian_filter, 
+    filters = {'Gauss': ndimage.gaussian_filter, 
                'Median': ndimage.median_filter}
-    filters1d = {'Gaussian': ndimage.gaussian_filter1d}
+    filters1d = {'Gauss': ndimage.gaussian_filter1d}
 
-    if method == 'Gaussian':
+    if method == 'Gauss':
         width_x, width_y = float(width_x), float(width_y)
     elif method == 'Median':
         width_x, width_y = int(np.ceil(float(width_x)))+1, int(np.ceil(float(width_y)))+1
@@ -93,25 +55,17 @@ def sav_gol(data, method, window_length, polyorder):
         axis = 1
     elif 'X' in method:
         axis = 0
-    deriv = int(method[-1])
+    deriv = method.count('d')
     if len(data) == 3:
-        data[-1] = signal.savgol_filter(
-                data[-1], window_length, polyorder, deriv=deriv, axis=axis)       
-        if (method == 'Y deriv 1' or method == 'Y deriv 2'):
-            data[-1] /= np.gradient(data[1], axis=1)
-            if method == 'Y deriv 2':
-                data[-1] /= np.gradient(data[1], axis=1)
-        elif (method == 'X deriv 1' or method == 'X deriv 2'):
-            data[-1] /= np.gradient(data[0], axis=0)
-            if method == 'X deriv 2':
-                data[-1] /= np.gradient(data[0], axis=0)
+        data[-1] = signal.savgol_filter(data[-1], window_length, polyorder, 
+                                        deriv=deriv, axis=axis)       
+        for _ in range(deriv):
+            data[-1] /= np.gradient(data[axis], axis=axis)
     elif len(data) == 2:
-        data[-1] = signal.savgol_filter(
-                data[-1], window_length, polyorder, deriv=deriv)
-        if deriv > 0:    
+        data[-1] = signal.savgol_filter(data[-1], window_length, polyorder, 
+                                        deriv=deriv)
+        for _ in range(deriv): 
             data[-1] /= np.gradient(data[0])
-            if deriv == 2:
-                data[-1] /= np.gradient(data[0])
     return data
 
 def crop_x(data, method, left, right):
@@ -119,9 +73,9 @@ def crop_x(data, method, left, right):
     max_data = np.max(data[0])
     left, right = float(left), float(right)
     if (left < right and max_data > left and min_data < right):
-        if method == 'Absolute':
+        if method == 'Abs':
             mask = ((data[0] < left) | (data[0] > right))
-        elif method == 'Relative':
+        elif method == 'Rel':
             mask = (((data[0] >= min_data) & (data[0] <= min_data + abs(left))) |
                     ((data[0] <= max_data) & (data[0] >= max_data - abs(right))))
         if len(data) == 3:
@@ -139,9 +93,9 @@ def crop_y(data, method, bottom, top):
         bottom, top = float(bottom), float(top)
         if (bottom < top and max_data > bottom and min_data < top):
             for i in [0,2,1]:
-                if method == 'Absolute':
+                if method == 'Abs':
                     mask = ((data[1] < bottom) | (data[1] > top))
-                elif method == 'Relative':
+                elif method == 'Rel':
                     mask = (((data[1] >= min_data) & (data[1] <= min_data + abs(bottom))) |
                             ((data[1] <= max_data) & (data[1] >= max_data - abs(top))))   
                 data[i] = np.ma.compress_rowcols(
@@ -185,16 +139,16 @@ def swap_xy(data, method, setting1, setting2):
     return data
 
 def flip(data, method, setting1, setting2):
-    if method == 'Up Down':
+    if method == 'U-D':
         data[-1] = np.fliplr(data[-1])
-    elif method == 'Left Right':
+    elif method == 'L-R':
         data[-1] = np.flipud(data[-1])
     return data
 
 def normalize(data, method, point_x, point_y):
-    if method == 'Maximum': 
+    if method == 'Max': 
         norm_value = np.max(data[-1])
-    elif method == 'Minimum':
+    elif method == 'Min':
         norm_value = np.min(data[-1])
     elif method == 'Point' and len(data) == 3:
         x_index = np.argmin(np.abs(data[0][:,0] - float(point_x)))
@@ -219,12 +173,17 @@ def absolute(data, method, setting1, setting2):
     data[-1] = np.absolute(data[-1])
     return data
     
-def mulitply(data, method, setting1, setting2):
+def multiply(data, method, setting1, setting2):
+    if setting1 == 'e^2/h':
+        value = 0.025974
+    else:
+        value = float(setting1)
+    
     axis = {'X': 0, 'Y': 1, 'Z': 2}
     if len(data) == 3:
-        data[axis[method]] *= float(setting1)
+        data[axis[method]] *= value
     elif len(data) == 2 and axis[method] < 2:
-        data[axis[method]] *= float(setting1)
+        data[axis[method]] *= value
     return data
 
 def logarithm(data, method, setting1, setting2):
@@ -274,7 +233,7 @@ def interpolate(data, method, n_x, n_y):
         data[1] = f(data[0])
     return data
     
-def slope(data, method, a_x, a_y):
+def add_slope(data, method, a_x, a_y):
     if len(data) == 3:
         a_x, a_y = float(a_x), float(a_y)
         data[-1] += a_x*data[0] + a_y*data[1]
@@ -286,9 +245,9 @@ def slope(data, method, a_x, a_y):
 def subtract_trace(data, method, index, setting2):
     if len(data) == 3:
         index = int(float(index))
-        if method == 'Horizontal':
+        if method == 'Hor':
             data[-1] -= np.tile(data[-1][:,index], (len(data[-1][0,:]),1)).T
-        elif method == 'Vertical':
+        elif method == 'Ver':
             data[-1] -= np.tile(data[-1][index,:], (len(data[-1][:,0]),1))
     return data
    
