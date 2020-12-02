@@ -461,6 +461,8 @@ class Ui_MainWindow(object):
         self.action_combine_files.setObjectName("action_combine_files")
         self.action_duplicate_file = QtWidgets.QAction(MainWindow)
         self.action_duplicate_file.setObjectName("action_duplicate_file")
+        self.action_save_data_selected_file = QtWidgets.QAction(MainWindow)
+        self.action_save_data_selected_file.setObjectName("action_save_data_selected_file")
         self.menu_save_session.addAction(self.action_current_file)
         self.menu_save_session.addAction(self.action_all_files)
         self.menu_save_session.addAction(self.action_checked_files)
@@ -476,6 +478,7 @@ class Ui_MainWindow(object):
         self.menuLink.addAction(self.action_unlink_folder)
         self.menuCombine_Plots.addAction(self.action_combine_files)
         self.menuCombine_Plots.addAction(self.action_duplicate_file)
+        self.menuCombine_Plots.addAction(self.action_save_data_selected_file)
         self.menu_bar.addAction(self.menu_save_session.menuAction())
         self.menu_bar.addAction(self.menuCombine_Plots.menuAction())
         self.menu_bar.addAction(self.menu_open_folder.menuAction())
@@ -568,6 +571,7 @@ class Ui_MainWindow(object):
         self.action_live_tracking.setText(_translate("MainWindow", "Live Tracking..."))
         self.action_combine_files.setText(_translate("MainWindow", "Combine Checked Files..."))
         self.action_duplicate_file.setText(_translate("MainWindow", "Duplicate Selected File..."))
+        self.action_save_data_selected_file.setText(_translate("MainWindow", "Save Data Selected File..."))
 
 
 if __name__ == "__main__":

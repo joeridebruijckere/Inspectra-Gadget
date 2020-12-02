@@ -746,6 +746,7 @@
     </property>
     <addaction name="action_combine_files"/>
     <addaction name="action_duplicate_file"/>
+    <addaction name="action_save_data_selected_file"/>
    </widget>
    <addaction name="menu_save_session"/>
    <addaction name="menuCombine_Plots"/>
@@ -966,6 +967,11 @@
   <action name="action_duplicate_file">
    <property name="text">
     <string>Duplicate Selected File...</string>
+   </property>
+  </action>
+  <action name="action_save_data_selected_file">
+   <property name="text">
+    <string>Save Data Selected File...</string>
    </property>
   </action>
  </widget>
