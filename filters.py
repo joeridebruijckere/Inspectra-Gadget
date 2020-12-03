@@ -69,25 +69,26 @@ def sav_gol(data, method, window_length, polyorder):
     return data
 
 def crop_x(data, method, left, right):
-    min_data = np.min(data[0])
-    max_data = np.max(data[0])
-    left, right = float(left), float(right)
-    if (left < right and max_data > left and min_data < right):
-        if method == 'Abs':
-            mask = ((data[0] < left) | (data[0] > right))
-        elif method == 'Rel':
-            mask = (((data[0] >= min_data) & (data[0] <= min_data + abs(left))) |
-                    ((data[0] <= max_data) & (data[0] >= max_data - abs(right))))
-        if len(data) == 3:
-            for i in [1,2,0]:
-                data[i] = np.ma.compress_rowcols(np.ma.masked_array(data[i], mask=mask), axis=0)
-        elif len(data) == 2:
-            for i in [1,0]:
-                data[i] = np.ma.masked_array(data[i], mask=mask)
+    if method != 'Lim':
+        min_data = np.min(data[0])
+        max_data = np.max(data[0])
+        left, right = float(left), float(right)
+        if (left < right and max_data > left and min_data < right):
+            if method == 'Abs':
+                mask = ((data[0] < left) | (data[0] > right))
+            elif method == 'Rel':
+                mask = (((data[0] >= min_data) & (data[0] <= min_data + abs(left))) |
+                        ((data[0] <= max_data) & (data[0] >= max_data - abs(right))))
+            if len(data) == 3:
+                for i in [1,2,0]:
+                    data[i] = np.ma.compress_rowcols(np.ma.masked_array(data[i], mask=mask), axis=0)
+            elif len(data) == 2:
+                for i in [1,0]:
+                    data[i] = np.ma.masked_array(data[i], mask=mask)
     return data
   
 def crop_y(data, method, bottom, top):
-    if len(data) == 3:
+    if len(data) == 3 and method != 'Lim':
         min_data = np.min(data[1])
         max_data = np.max(data[1])
         bottom, top = float(bottom), float(top)
@@ -199,20 +200,10 @@ def logarithm(data, method, setting1, setting2):
         data[-1] = np.ma.log10(np.abs(data[-1]))
     return data
 
-def band_cut(data, method, index1, index2):
-    if len(data) == 3:
-        if method == 'X':    
-            f_transform = np.fft.fft(data[-1], axis=0)
-            f_transform[int(index1):int(index2),:] = 0.0j
-            data[-1] = np.fft.ifft(f_transform, axis=0)
-        elif method == 'Y':
-            f_transform = np.fft.fft(data[-1], axis=1)
-            f_transform[:,int(index1):int(index2)] = 0.0j
-            data[-1] = np.absolute(np.fft.ifft(f_transform, axis=1))
-    if len(data) == 2:   
-        f_transform = np.fft.fft(data[-1])
-        f_transform[int(index1):int(index2)] = 0.0j
-        data[-1] = np.fft.ifft(f_transform)
+def root(data, method, setting1, setting2):
+    root = float(setting1)
+    if root > 0:
+        data[-1] = np.abs(data[-1])**(1/float(setting1))
     return data
 
 def interpolate(data, method, n_x, n_y):

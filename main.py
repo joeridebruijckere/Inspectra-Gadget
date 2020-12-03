@@ -15,7 +15,6 @@ import copy
 import io
 from stat import ST_CTIME
 import numpy as np
-from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
@@ -178,6 +177,7 @@ SETTINGS_MENU_OPTIONS['lut'] = ['128','256','512','1024']
 SETTINGS_MENU_OPTIONS['rasterized'] = ['True','False']
 SETTINGS_MENU_OPTIONS['dpi'] = ['figure','300']
 SETTINGS_MENU_OPTIONS['transparent'] = ['True', 'False']
+SETTINGS_MENU_OPTIONS['shading'] = ['auto', 'flat', 'gouraud', 'nearest']
 
 
 class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
@@ -265,8 +265,9 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_current_file.triggered.connect(lambda: self.save_session('current'))
         self.action_all_files.triggered.connect(lambda: self.save_session('all'))
         self.action_checked_files.triggered.connect(lambda: self.save_session('checked'))
-        self.action_merge_raw.triggered.connect(lambda: self.merge_files(raw_data=True))
-        self.action_merge_processed.triggered.connect(lambda: self.merge_files(raw_data=False))
+        self.action_combine_files.triggered.connect(self.combine_plots)
+        self.action_duplicate_file.triggered.connect(self.duplicate_item)
+        self.action_save_data_selected_file.triggered.connect(self.save_processed_data)
         self.track_button.clicked.connect(self.track_button_clicked)
         self.action_open_files_from_folder.triggered.connect(self.open_files_from_folder)
         self.action_preset_0.triggered.connect(lambda: self.apply_preset(0))
@@ -410,12 +411,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     raise
         self.show_current_all()
         self.canvas.draw()
-        last_item = self.file_list.item(self.file_list.count()-1)
-        if (last_item.checkState() and self.track_button.text() == 'Stop' and 
-            hasattr(last_item.data, 'remaining_time_string')):
-            self.remaining_time_label.setText(last_item.data.remaining_time_string)
-        else:
-            self.remaining_time_label.setText('')
+        if hasattr(self, 'live_track_item') and self.live_track_item:
+            if (self.live_track_item.checkState() and 
+                self.track_button.text() == 'Stop' and 
+                hasattr(self.live_track_item.data, 'remaining_time_string')):
+                self.remaining_time_label.setText(self.live_track_item.data.remaining_time_string)
+            else:
+                self.remaining_time_label.setText('')
           
     def refresh_files(self):
         checked_items = self.get_checked_items()
@@ -430,7 +432,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 last_item = self.file_list.item(self.file_list.count()-1)
                 self.file_double_clicked(last_item)
                 self.file_list.setCurrentItem(last_item)
-                self.track_button_clicked() # TODO: is this the desired behavior?
+                self.track_button_clicked()
             
     def to_next_file(self):
         checked_items, indices = self.get_checked_items(return_indices=True)
@@ -468,18 +470,21 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             return checked_items
         
     def track_button_clicked(self):
-        if self.track_button.text() == 'Track':
-            last_item = self.file_list.item(self.file_list.count()-1)
-            if last_item:
-                last_item.data.prepare_data_for_plot(reload_data=True)
-                if last_item.data.raw_data:
-                    if len(last_item.data.get_columns()) == 3: # if file is 3D
-                        self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
-                    elif len(last_item.data.get_columns()) == 2: # if file is 2D
-                        self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
-                else:
-                    self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D, 
-                                            wait_for_file=True)
+        current_item = self.file_list.currentItem()
+        if (self.track_button.text() == 'Track' and 
+            current_item and current_item.checkState() and
+            not current_item.data.file_finished()):
+            self.live_track_item = current_item
+            self.live_track_item.setText('[LIVE] '+self.live_track_item.data.label)
+            self.live_track_item.data.prepare_data_for_plot(reload_data=True)
+            if self.live_track_item.data.raw_data:
+                if len(self.live_track_item.data.get_columns()) == 3: # if file is 3D
+                    self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
+                elif len(self.live_track_item.data.get_columns()) == 2: # if file is 2D
+                    self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
+            else:
+                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D, 
+                                        wait_for_file=True)
         elif self.track_button.text() == 'Stop':
             self.stop_auto_refresh()
         
@@ -498,24 +503,22 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.auto_refresh_call()
         
     def wait_for_file_call(self):
-        last_item = self.file_list.item(self.file_list.count()-1)
-        if last_item.checkState():
-            last_item.data.prepare_data_for_plot(reload_data=True)
-            if last_item.data.raw_data:
+        if self.live_track_item and self.live_track_item.checkState():
+            self.live_track_item.data.prepare_data_for_plot(reload_data=True)
+            if self.live_track_item.data.raw_data:
                 self.auto_refresh_timer.stop()
                 self.track_button.setText('Track')
                 self.track_button_clicked()            
             
     def auto_refresh_call(self):
-        last_item = self.file_list.item(self.file_list.count()-1)
-        if last_item.checkState():
-            if last_item.data.file_finished():
+        if self.live_track_item and self.live_track_item.checkState():
+            if self.live_track_item.data.file_finished():
                 print('Stop auto refresh...')
-                last_item.data.remaining_time_string = ''
+                self.live_track_item.data.remaining_time_string = ''
                 self.stop_auto_refresh()
             else:
-                if hasattr(last_item.data, 'remaining_time_string'):
-                    self.remaining_time_label.setText(last_item.data.remaining_time_string)
+                if hasattr(self.live_track_item.data, 'remaining_time_string'):
+                    self.remaining_time_label.setText(self.live_track_item.data.remaining_time_string)
                 else:
                     self.remaining_time_label.setText('')
             self.window_title_auto_refresh = ' - Auto-Refreshing Enabled (Refreshing...)'
@@ -531,6 +534,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.window_title_auto_refresh = ''
         self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
         self.remaining_time_label.setText('')
+        self.live_track_item.setText(self.live_track_item.data.label)
         
     def move_file(self, direction):
         current_item = self.file_list.currentItem()
@@ -635,6 +639,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     current_item.data.apply_colormap()
                 elif (setting_name == 'rasterized' or setting_name == 'colorbar'
                       or setting_name == 'minorticks'):
+                    self.update_plots()
+                elif setting_name == 'shading':
                     self.update_plots()
                 current_item.data.extension_setting_edited(self, setting_name)
                 current_item.data.apply_plot_settings()
@@ -806,15 +812,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         current_item = self.file_list.currentItem()
         if current_item:
             if signal.text() == 'Duplicate...':
-                self.open_files(filepaths=[current_item.data.filepath])
-                item = self.file_list.currentItem()
-                item.data.label = f'*{item.data.label}'
-                item.setText(item.data.label)
-                item.duplicate = True
-                item.data.settings = current_item.data.settings.copy()
-                item.data.view_settings = current_item.data.view_settings.copy()
-                item.data.filters = copy.deepcopy(current_item.data.filters)              
-                self.update_plots()
+                self.duplicate_item()
             elif signal.text() == 'Check all...':
                 self.file_list.itemChanged.disconnect(self.file_checked)
                 for item_index in range(self.file_list.count()):                        
@@ -826,21 +824,26 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.combine_plots()
                 except Exception as e:
                     print('Cannot combine these plots...', e)
+                    
+    def duplicate_item(self):
+        original_item = self.file_list.currentItem()
+        if original_item:
+            self.open_files(filepaths=[original_item.data.filepath])
+            new_item = self.file_list.currentItem()
+            new_item.setText(f'[DUPLICATE] {new_item.data.label}')
+            new_item.duplicate = True
+            new_item.data.settings = original_item.data.settings.copy()
+            new_item.data.view_settings = original_item.data.view_settings.copy()
+            new_item.data.filters = copy.deepcopy(original_item.data.filters)              
+            self.update_plots()
                 
-    def combine_plots(self): # TODO fix
+    def combine_plots(self):
         checked_items = self.get_checked_items()
         if checked_items:
-            title = '[combined] '
             data_list = []
             for item in checked_items:
-                split_text = item.text().split(' ')
-                title += f'{split_text[0]} {split_text[1]}'
                 data_list.append(item.data)
-            self.multi_plot_window = LineCutWindow(parent=data_list, multiple=True)
-            self.multi_plot_window.title = title
-            self.multi_plot_window.xlabel = data_list[0].settings['xlabel']
-            self.multi_plot_window.ylabel = data_list[0].settings['ylabel']
-            self.multi_plot_window.zlabel = None
+            self.multi_plot_window = MultiPlotWindow(data_list)
             self.multi_plot_window.draw_plot()
             self.multi_plot_window.show()
     
@@ -1221,6 +1224,21 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             rcParams_to_dark_theme()
             self.update_plots(update_data=False)
             
+    def save_processed_data(self):
+        current_item = self.file_list.currentItem()
+        if current_item:
+            suggested_filename = (current_item.data.label.replace(':','') +
+                                  '_processed')
+            filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'Save Processed Data As...', suggested_filename, '*.npy')
+            if filepath:
+                #save_data = np.column_stack(tuple(data.flatten() for data in 
+                #                                  current_item.data.processed_data))
+                if len(current_item.data.get_columns()) == 2:
+                    np.save(filepath, np.column_stack(current_item.data.processed_data))
+                elif len(current_item.data.get_columns()) == 3:
+                    np.save(filepath, np.stack(current_item.data.processed_data, axis=2))
+            
     def mouse_scroll_canvas(self, event):
         if event.inaxes:
             y = event.ydata
@@ -1298,55 +1316,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             else:
                 self.stop_auto_refresh()
                 print('Stop live tracking...')
-            
-    def merge_files(self, raw_data=True): # TODO improve
-        try:
-            checked_items = self.get_checked_items()
-            if len(checked_items) > 1:
-                filepaths = [item.data.filepath for item in checked_items]
-                time_stamps = [item.data.label.split('_')[0] for item in checked_items]
-                device_name = checked_items[0].data.label.split('_')[1] # TODO make more general
-                measurement_name = checked_items[0].data.label.split('_')[2]
-                output_name = '_'.join(time_stamps)+'_'+device_name+'_'+measurement_name+'_merged.dat'
-                output_dir = os.path.dirname(checked_items[0].data.filepath)
-                output_filepath = output_dir+'/'+output_name
-                if raw_data:
-                    with open(output_filepath,'w') as out_file:
-                        for filepath in filepaths:
-                            with open(filepath) as in_file:
-                                for line in in_file:
-                                    out_file.write(line)
-                else:
-                    data = [item.data.processed_data for item in checked_items]
-                    min_x = [np.amin(data[n][0]) for n,_ in enumerate(checked_items)]
-                    max_x = [np.amax(data[n][0]) for n,_ in enumerate(checked_items)]
-                    min_y = [np.amin(data[n][1]) for n,_ in enumerate(checked_items)]
-                    max_y = [np.amax(data[n][1]) for n,_ in enumerate(checked_items)]
-                    dmin_x = [np.abs(data[n][0][1,0]-data[n][0][0,0]) for n,_ in enumerate(checked_items)]
-                    dmin_y = [np.abs(data[n][1][0,1]-data[n][1][0,0]) for n,_ in enumerate(checked_items)]
-                    grid_x = np.arange(np.min(min_x),np.max(max_x),np.min(dmin_x))
-                    grid_y = np.arange(np.min(min_y),np.max(max_y),np.min(dmin_y))
-                    y_g, x_g = np.meshgrid(grid_y, grid_x)
-                    points_x = np.concatenate([data[n][0].flatten() for n,_ in enumerate(checked_items)])
-                    points_y = np.concatenate([data[n][1].flatten() for n,_ in enumerate(checked_items)])
-                    values_z = np.concatenate([data[n][2].flatten() for n,_ in enumerate(checked_items)])
-                    g_data = griddata(np.stack([points_x,points_y],-1), values_z, (x_g,y_g), method='nearest')
-                    data0 = checked_items[0].data
-                    view_settings = {
-                            'Minimum': np.min(g_data), 'Maximum': np.max(g_data), 
-                            'Midpoint': 0.5*(np.min(g_data)+np.max(g_data)),
-                            'Colormap': 'magma', 'Colormap Type': 'Uniform',
-                            'Locked': 0, 'MidLock': 0, 'Reverse': 2}
-                    dictionary_list = [{'File Name': output_name, 'Settings': data0.default_settings,
-                                      'Filters': [], 'View Settings': view_settings,
-                                      'Raw Data': [x_g,y_g,g_data]}]
-                    np.save(output_filepath, dictionary_list)
-                print('Merged files into file '+output_filepath)
-        except Exception as e:
-            print('Cannot merge these files...', e)
-            
-            
-    def apply_preset(self, preset_number): # TODO improve
+                              
+    def apply_preset(self, preset_number):
         checked_items = self.get_checked_items()
         if checked_items:
             for item in checked_items:
@@ -1391,6 +1362,7 @@ class BaseClassData:
     DEFAULT_PLOT_SETTINGS['rasterized'] = 'True'
     DEFAULT_PLOT_SETTINGS['dpi'] = '300'
     DEFAULT_PLOT_SETTINGS['transparent'] = 'False'
+    DEFAULT_PLOT_SETTINGS['shading'] = 'auto'
     
     # Set default view settings
     DEFAULT_VIEW_SETTINGS = {}
@@ -1440,7 +1412,6 @@ class BaseClassData:
             if len(unique_values) > 1:
                 sorted_indices = sorted(unique_indices)
                 if len(column_data[sorted_indices[-1]::,0]) < sorted_indices[1]:
-                    # Ignore the data from the last sweep if unfinished # TODO improve (fill unfinished with nans)
                     data_shape = (len(unique_values)-1, sorted_indices[1])
                 else:
                     data_shape = (len(unique_values), sorted_indices[1])
@@ -1450,13 +1421,14 @@ class BaseClassData:
             if data_shape[0] > 1: # If two or more sweeps are finished
         
                 # Check if second column also has unique values at the same 
-                # indices as the first column; if yes, skip that column.
+                # indices as the first column and if the first two values in 
+                # the second column repeat ; if both True, skip that column.
                 # Relevant for measurements where two parameters are swept simultaneously
-                # TODO Fix: this goes wrong for 2D plots where the second column is monotonically increasing (e.g. IV-curve of a resistor)
                 _, next_unique_indices = np.unique(column_data[:,columns[1]], 
                                                    return_index=True)
-                if (np.array_equal(unique_indices, next_unique_indices) or
-                    np.array_equal(unique_indices, next_unique_indices[::-1])):
+                if ((np.array_equal(unique_indices, next_unique_indices) or
+                     np.array_equal(unique_indices, next_unique_indices[::-1])) and
+                    (column_data[1,columns[1]] == column_data[0,columns[1]])):
                     columns[1] += 1
                     if len(columns) > 2 and columns[1] == columns[2]:
                         columns[2] += 1
@@ -1488,7 +1460,7 @@ class BaseClassData:
     def copy_raw_to_processed_data(self):
         self.processed_data = [np.copy(self.raw_data[x]) for x in self.get_columns()]
 
-    def prepare_data_for_plot(self, reload_data=False):
+    def prepare_data_for_plot(self, reload_data=False, refresh_filters=False):
         if not hasattr(self, 'raw_data') or reload_data:
             self.load_and_reshape_data()
         if self.raw_data:
@@ -1514,7 +1486,8 @@ class BaseClassData:
                 self.image = self.axes.pcolormesh(self.processed_data[0], 
                                                   self.processed_data[1], 
                                                   self.processed_data[2], 
-                                                  shading='auto', norm=norm, cmap=cmap,
+                                                  shading=self.settings['shading'], 
+                                                  norm=norm, cmap=cmap,
                                                   rasterized=self.settings['rasterized'])
                 if self.settings['colorbar'] == 'True':
                     self.cbar = self.figure.colorbar(self.image, orientation='vertical')
@@ -1561,6 +1534,21 @@ class BaseClassData:
             self.cbar.ax.tick_params(labelsize=self.settings['ticksize'], 
                                      color=rcParams['axes.edgecolor']) 
             self.cbar.outline.set_linewidth(float(self.settings['spinewidth']))
+        if ('Crop Y' in [filt.name for filt in self.filters] 
+            and len(self.get_columns()) == 3):
+            crop_filters = [filt for filt in self.filters 
+                            if filt.name == 'Crop Y']
+            for filt in crop_filters:
+                if filt.method == 'Lim' and filt.checkstate:
+                    self.axes.set_ylim(top=float(filt.settings[1]), 
+                                       bottom=float(filt.settings[0]))
+        if ('Crop X' in [filt.name for filt in self.filters]):
+            crop_filters = [filt for filt in self.filters 
+                            if filt.name == 'Crop Y']
+            for filt in crop_filters:
+                if filt.method == 'Lim' and filt.checkstate:
+                    self.axes.set_xlim(left=float(filt.settings[0]), 
+                                       right=float(filt.settings[1]))
 
     def apply_view_settings(self):
         if len(self.get_columns()) == 3:
@@ -1647,19 +1635,11 @@ class NumpyData(BaseClassData):
         super().__init__(filepath, canvas)
         self.dataset = dataset
         self.label = self.dataset['Label']
-
-    def setup_plot_settings(self):
         for setting, value in self.dataset['Settings'].items():
             if setting in self.settings:
                 self.settings[setting] = value        
-
-    def setup_filters(self):
         self.filters = self.dataset['Filters']
-        
-    def setup_view_settings(self):
         self.view_settings = self.dataset['View Settings']       
-        
-    def setup_raw_data(self):
         self.raw_data = self.dataset['Raw Data']
 
     def prepare_data_for_plot(self, reload_data=False):
@@ -1680,14 +1660,38 @@ class Filter:
                                     'Settings': ['7', '2'],
                                     'Function': filters.sav_gol,
                                     'Checkstate': 2},                               
-                        'Crop X': {'Method': ['Abs', 'Rel'],
+                        'Crop X': {'Method': ['Abs', 'Rel', 'Lim'],
                                    'Settings': ['-1', '1'],
                                    'Function': filters.crop_x,
                                    'Checkstate': 0},                              
-                        'Crop Y': {'Method': ['Abs', 'Rel'],
-                                   'Settings': ['-1', '1'],
+                        'Crop Y': {'Method': ['Abs', 'Rel', 'Lim'],
+                                   'Settings': ['-2', '2'],
                                    'Function': filters.crop_y,
                                    'Checkstate': 0},
+                        'Logarithm': {'Method': ['Mask','Shift','Abs'],
+                                      'Settings': ['', ''],
+                                      'Function': filters.logarithm,
+                                      'Checkstate': 2}, 
+                        'Root': {'Method': [''],
+                                 'Settings': ['2', ''],
+                                 'Function': filters.root,
+                                 'Checkstate': 2}, 
+                        'Offset': {'Method': ['X','Y','Z'],
+                                   'Settings': ['0', ''],
+                                   'Function': filters.offset,
+                                   'Checkstate': 0},               
+                        'Absolute': {'Method': [''],
+                                     'Settings': ['', ''],
+                                     'Function': filters.absolute,
+                                     'Checkstate': 2}, 
+                        'Multiply': {'Method': ['X','Y','Z'],
+                                     'Settings': ['1', ''],
+                                     'Function': filters.multiply,
+                                     'Checkstate': 2}, 
+                        'Divide': {'Method': ['X','Y','Z'],
+                                   'Settings': ['1', ''],
+                                   'Function': filters.divide,
+                                   'Checkstate': 0}, 
                         'Roll X': {'Method': ['Index'],
                                    'Settings': ['0', '0'],
                                    'Function': filters.roll_x,
@@ -1715,27 +1719,11 @@ class Filter:
                         'Normalize': {'Method': ['Max', 'Min', 'Point'],
                                       'Settings': ['', ''],
                                       'Function': filters.normalize,
-                                      'Checkstate': 0}, 
-                        'Offset': {'Method': ['X','Y','Z'],
-                                   'Settings': ['0', ''],
-                                   'Function': filters.offset,
-                                   'Checkstate': 0},               
-                        'Absolute': {'Method': [''],
-                                     'Settings': ['', ''],
-                                     'Function': filters.absolute,
-                                     'Checkstate': 2},                 
-                        'Multiply': {'Method': ['X','Y','Z'],
-                                     'Settings': ['1', ''],
-                                     'Function': filters.multiply,
-                                     'Checkstate': 2}, 
+                                      'Checkstate': 0},                
                         'Slope': {'Method': [''],
                                   'Settings': ['0', '-1'],
                                   'Function': filters.add_slope,
                                   'Checkstate': 0}, 
-                        'Logarithm': {'Method': ['Mask','Shift','Abs'],
-                                      'Settings': ['', ''],
-                                      'Function': filters.logarithm,
-                                      'Checkstate': 2}, 
                         'Interp': {'Method': ['linear','cubic','quintic'],
                                    'Settings': ['800', '600'],
                                    'Function': filters.interpolate,
@@ -1744,10 +1732,6 @@ class Filter:
                                      'Settings': ['0', ''],
                                      'Function': filters.subtract_trace,
                                      'Checkstate': 0}, 
-                        'Divide': {'Method': ['X','Y','Z'],
-                                   'Settings': ['1', ''],
-                                   'Function': filters.divide,
-                                   'Checkstate': 0}, 
                         'Invert': {'Method': ['X','Y','Z'],
                                    'Settings': ['', ''],
                                    'Function': filters.invert,
@@ -1874,65 +1858,36 @@ class LineCutWindow(QtWidgets.QWidget):
             self.peak_estimates = []
         self.canvas.draw()
     
-    def detect_peaks(self):
-        self.clear_lines()
-        if self.reverse_checkbox.checkState(): 
-            index_trace = np.argmax(self.z[:,0])
-        else:
-            index_trace = np.argmin(self.z[:,0])
-        peaks, _ = find_peaks(self.y[index_trace,:], width=5)
-        if not hasattr(self, 'peak_estimates'):
-            self.peak_estimates = []
-        for peak in peaks:
-            self.peak_estimates.append(self.axes.axvline(self.x[index_trace,peak], 
-                                                         linestyle='dashed'))
-        self.canvas.draw()
-    
     def fit_type_changed(self):
         self.pars_label.setText(fits.get_names(parameters=self.fit_box.currentText()))
     
     def start_fitting(self):
         function_name = self.fit_box.currentText()
         self.y_fit = np.copy(self.y)
-        if self.manual_box.checkState():
+        if self.guess_checkbox.checkState():
             p0 = None
         else:
             p0 = [float(par) for par in self.guess_edit.text().split()]
-        if self.multiple:
-            self.fit_parameters = []
-            for index in range(int(self.number_line_edit.text())):
-                try:
-                    popt = fits.fit_data(function_name=function_name, xdata=self.x[index], 
-                                         ydata=self.y[index], p0=p0)
-                    self.fit_parameters.append(list(popt))
-                    self.y_fit[index] = fits.get_function(function_name)(self.x[index], *popt)
-                except RuntimeError:
-                    print('Curve with index '+str(index)+' could not be fitted...')
-                    nans = [np.nan]*len(fits.get_names(function_name).split(','))
-                    self.fit_parameters.append(nans)
-                    self.y_fit[index] = np.nan
-        else:
-            try:
-                self.fit_parameters = fits.fit_data(function_name=function_name, xdata=self.x, 
-                                                    ydata=self.y, p0=p0)
-                self.y_fit = fits.get_function(function_name)(self.x, *self.fit_parameters)
-            except RuntimeError:
-                print('Curve could not be fitted...')
-                self.fit_parameters = [np.nan]*len(fits.get_names(function_name).split(','))
-                self.y_fit = np.nan            
-        self.draw_plot(self.x, self.y)
+        try:
+            self.fit_parameters = fits.fit_data(function_name=function_name, xdata=self.x, 
+                                                ydata=self.y, p0=p0)
+            self.y_fit = fits.get_function(function_name)(self.x, *self.fit_parameters)
+        except RuntimeError:
+            print('Curve could not be fitted...')
+            self.fit_parameters = [np.nan]*len(fits.get_names(function_name).split(','))
+            self.y_fit = np.nan            
+        self.draw_plot()
         self.draw_fits()
         self.plot_parameters()
-        
-        
+           
     def plot_parameters(self):
-        self.axes.text(0.02,0.95,'Position: {self.fit_parameters[2]:.4g}', 
+        self.axes.text(0.02,0.95,f'Position: {self.fit_parameters[2]:.4g}', 
                        transform=self.axes.transAxes)
-        self.axes.text(0.02,0.9,'Height: {self.fit_parameters[1]:.4g}', 
+        self.axes.text(0.02,0.9,f'Height: {self.fit_parameters[1]:.4g}', 
                        transform=self.axes.transAxes)
-        self.axes.text(0.02,0.85,'Width: {self.fit_parameters[0]:.4g}', 
+        self.axes.text(0.02,0.85,f'Width: {self.fit_parameters[0]:.4g}', 
                        transform=self.axes.transAxes)
-        self.axes.text(0.02,0.8,'Background: {self.fit_parameters[3]:.4g}', 
+        self.axes.text(0.02,0.8,f'Background: {self.fit_parameters[3]:.4g}', 
                        transform=self.axes.transAxes)
         self.canvas.draw()
          
@@ -1942,20 +1897,20 @@ class LineCutWindow(QtWidgets.QWidget):
         self.axes = self.figure.add_subplot(111)
         
         if self.orientation == 'horizontal':
-            x = self.parent.processed_data[0][:,self.parent.selected_indices[1]]
-            y = self.parent.processed_data[2][:,self.parent.selected_indices[1]]
-            z = self.parent.processed_data[1][0,self.parent.selected_indices[1]]
-            xlabel = self.parent.settings['xlabel']
-            title = f'{self.parent.settings["ylabel"]} = {z}'
-            self.parent.linecut = self.parent.axes.axhline(y=z, linestyle='dashed', linewidth=1, 
+            self.x = self.parent.processed_data[0][:,self.parent.selected_indices[1]]
+            self.y = self.parent.processed_data[2][:,self.parent.selected_indices[1]]
+            self.z = self.parent.processed_data[1][0,self.parent.selected_indices[1]]
+            self.xlabel = self.parent.settings['xlabel']
+            self.title = f'{self.parent.settings["ylabel"]} = {self.z}'
+            self.parent.linecut = self.parent.axes.axhline(y=self.z, linestyle='dashed', linewidth=1, 
                                                            color=self.parent.settings['linecolor'])
         elif self.orientation == 'vertical':
-            x = self.parent.processed_data[1][self.parent.selected_indices[0],:]
-            y = self.parent.processed_data[2][self.parent.selected_indices[0],:]
-            z = self.parent.processed_data[0][self.parent.selected_indices[0],0]
-            xlabel = self.parent.settings['ylabel']
-            title = f'{self.parent.settings["xlabel"]} = {z}'
-            self.parent.linecut = self.parent.axes.axvline(x=z, linestyle='dashed', linewidth=1, 
+            self.x = self.parent.processed_data[1][self.parent.selected_indices[0],:]
+            self.y = self.parent.processed_data[2][self.parent.selected_indices[0],:]
+            self.z = self.parent.processed_data[0][self.parent.selected_indices[0],0]
+            self.xlabel = self.parent.settings['ylabel']
+            self.title = f'{self.parent.settings["xlabel"]} = {self.z}'
+            self.parent.linecut = self.parent.axes.axvline(x=self.z, linestyle='dashed', linewidth=1, 
                                                            color=self.parent.settings['linecolor'])
         elif self.orientation == 'diagonal' or self.orientation == 'circular':
             x0 = self.parent.linecut_points[0].x 
@@ -1975,28 +1930,28 @@ class LineCutWindow(QtWidgets.QWidget):
                 n = int(np.sqrt((i_x1-i_x0)**2+(i_y1-i_y0)**2))
                 x_diag = np.linspace(i_x0, i_x1, n), 
                 y_diag = np.linspace(i_y0, i_y1, n)
-                y = map_coordinates(self.parent.processed_data[-1], 
-                                    np.vstack((x_diag, y_diag)))
-                x = map_coordinates(self.parent.processed_data[0], 
-                                    np.vstack((x_diag, y_diag)))                
-                xlabel = self.parent.settings['xlabel']
+                self.y = map_coordinates(self.parent.processed_data[-1], 
+                                         np.vstack((x_diag, y_diag)))
+                self.x = map_coordinates(self.parent.processed_data[0], 
+                                         np.vstack((x_diag, y_diag)))                
+                self.xlabel = self.parent.settings['xlabel']
             elif self.orientation == 'circular':
                 n = int(8*np.sqrt((i_x0-i_x1)**2+(i_y0-i_y1)**2))
                 theta = np.linspace(0, 2*np.pi, n)
                 i_x_circ = i_x0+(i_x1-i_x0)*np.cos(theta) 
                 i_y_circ = i_y0+(i_y1-i_y0)*np.sin(theta)
-                y = map_coordinates(self.parent.processed_data[-1], 
-                                    np.vstack((i_x_circ, i_y_circ)))
-                x = theta
-                xlabel = 'Angle (rad)'
-            title = ''
-        ylabel = self.parent.settings['clabel']
-        self.image = self.axes.plot(x, y, linewidth=self.parent.settings['linewidth'])
+                self.y = map_coordinates(self.parent.processed_data[-1], 
+                                         np.vstack((i_x_circ, i_y_circ)))
+                self.x = theta
+                self.xlabel = 'Angle (rad)'
+            self.title = ''
+        self.ylabel = self.parent.settings['clabel']
+        self.image = self.axes.plot(self.x, self.y, linewidth=self.parent.settings['linewidth'])
         self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
-        self.axes.set_xlabel(xlabel, size='xx-large')
-        self.axes.set_ylabel(ylabel, size='xx-large')
+        self.axes.set_xlabel(self.xlabel, size='xx-large')
+        self.axes.set_ylabel(self.ylabel, size='xx-large')
         self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
-        self.axes.set_title(title, size='x-large')
+        self.axes.set_title(self.title, size='x-large')
         self.canvas.draw()
         self.parent.canvas.draw()
               
@@ -2061,12 +2016,12 @@ class LineCutWindow(QtWidgets.QWidget):
                     self.parent.selected_indices[0] = new_index
             self.update()
             self.parent.canvas.draw()
+  
             
-            
-class MultipleLineCutsWindow(LineCutWindow):
+class MultiPlotWindow(LineCutWindow):
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle('Inspectra Gadget - Multiple Linecuts Window')
+        self.setWindowTitle('Inspectra Gadget - Multiplot Window')
  
     def init_widgets(self):
         super().init_widgets()
@@ -2078,14 +2033,6 @@ class MultipleLineCutsWindow(LineCutWindow):
             self.colormap_type_box.addItem(cmap_type)
         self.colormap_box.addItems(list(cmaps.values())[0])
         
-        self.number_label = QtWidgets.QLabel('Number of lines:')
-        self.number_line_edit = QtWidgets.QLineEdit('5')
-        self.number_line_edit.setFixedSize(40,20)
-        self.all_lines_button = QtWidgets.QPushButton('All')
-        self.all_lines_button.setFixedSize(35,22)
-        self.check_specify_lines = QtWidgets.QCheckBox('Specify lines:')
-        self.check_specify_lines.clicked.connect(self.draw_plot)
-        self.specify_lines_edit = QtWidgets.QLineEdit('')
         self.offset_label = QtWidgets.QLabel('Offset')
         self.offset_line_edit = QtWidgets.QLineEdit('0')
         self.offset_line_edit.setFixedSize(70,20)
@@ -2099,9 +2046,6 @@ class MultipleLineCutsWindow(LineCutWindow):
         super().init_connections()
         self.colormap_type_box.currentIndexChanged.connect(self.colormap_type_edited)
         self.colormap_box.currentIndexChanged.connect(self.draw_plot)
-        self.number_line_edit.editingFinished.connect(self.draw_plot)
-        self.all_lines_button.clicked.connect(self.clicked_all_lines)
-        self.specify_lines_edit.editingFinished.connect(self.draw_plot)
         self.offset_line_edit.editingFinished.connect(self.draw_plot)
         self.check_legend.clicked.connect(self.draw_plot)
         self.detect_peaks_button.clicked.connect(self.detect_peaks)
@@ -2118,11 +2062,7 @@ class MultipleLineCutsWindow(LineCutWindow):
         self.top_buttons_layout.addWidget(self.colormap_box)
         
         self.lines_layout = QtWidgets.QHBoxLayout()
-        self.lines_layout.addWidget(self.number_label)
-        self.lines_layout.addWidget(self.number_line_edit)
-        self.lines_layout.addWidget(self.all_lines_button)
-        self.lines_layout.addWidget(self.check_specify_lines)
-        self.lines_layout.addWidget(self.specify_lines_edit)
+        self.lines_layout.addStretch()
         self.lines_layout.addWidget(self.offset_label)
         self.lines_layout.addWidget(self.offset_line_edit)
         self.lines_layout.addWidget(self.check_legend)
@@ -2144,10 +2084,12 @@ class MultipleLineCutsWindow(LineCutWindow):
             if event.inaxes and lmfit_imported:
                 x = event.xdata                
                 if event.button == 1:
+                    if not hasattr(self, 'peak_estimates'):
+                        self.peak_estimates = []
                     self.peak_estimates.append(self.axes.axvline(x, linestyle='dashed'))
                     self.canvas.draw()
                 elif event.button == 3:
-                    if self.peak_estimates:
+                    if hasattr(self, 'peak_estimates') and self.peak_estimates:
                         # Remove peak closest to right-click
                         peak_index = np.argmin(np.array([np.abs(p.get_xdata()[0]-x) for p in self.peak_estimates]))
                         self.peak_estimates[peak_index].remove()
@@ -2161,39 +2103,52 @@ class MultipleLineCutsWindow(LineCutWindow):
     def closeEvent(self, event):
         self.running = False
     
+    def detect_peaks(self):
+        self.clear_lines()
+        if self.reverse_checkbox.checkState(): 
+            index_trace = np.argmax(self.z)
+        else:
+            index_trace = np.argmin(self.z)
+        peaks, _ = find_peaks(self.y[index_trace], width=5)
+        if not hasattr(self, 'peak_estimates'):
+            self.peak_estimates = []
+        for peak in peaks:
+            self.peak_estimates.append(self.axes.axvline(self.x[index_trace][peak], 
+                                                         linestyle='dashed'))
+        self.canvas.draw()
+    
     def start_fitting(self):
         function_name = self.fit_box.currentText()
-        if hasattr(self, 'peak_estimates') and len(self.peak_estimates) > 1:
+        if hasattr(self, 'peak_estimates') and len(self.peak_estimates) > 0:
             center_estimates = [p.get_xdata()[0] for p in self.peak_estimates]
             n_peaks = len(center_estimates)
             self.clear_lines()
-            line_indices = list(range(self.z.shape[0]))
-            if np.argmin(self.z[:,0]) == 0 and self.reverse_checkbox.checkState():  
+            line_indices = list(range(len(self.z)))
+            if np.argmin(self.z) == 0 and self.reverse_checkbox.checkState():  
                 line_indices.reverse()
-            elif np.argmax(self.z[:,0]) == 0 and not self.reverse_checkbox.checkState(): 
+            elif np.argmax(self.z) == 0 and not self.reverse_checkbox.checkState(): 
                 line_indices.reverse()
             
             # Initialize objects
             values = None
-            peak_values = {}
-            peak_values['background_constant'] = []
-            peak_values['mean_height'] = []
-            peak_values['mean_fwhm'] = []
-            peak_values['coordinates'] = self.z[line_indices,0]
+            self.peak_values = {}
+            self.peak_values['background_constant'] = []
+            self.peak_values['mean_height'] = []
+            self.peak_values['mean_fwhm'] = []
+            self.peak_values['coordinates'] = self.z[line_indices]
             for i in range(len(center_estimates)):
-                peak_values[f'p{i}_center'] = [] 
-                peak_values[f'p{i}_height'] = [] 
-                peak_values[f'p{i}_fwhm'] = []
+                self.peak_values[f'p{i}_center'] = [] 
+                self.peak_values[f'p{i}_height'] = [] 
+                self.peak_values[f'p{i}_fwhm'] = []
 
             # Fit routine for every trace
             for counter, line_index in enumerate(line_indices):
-                x, y, z = self.x[line_index,:], self.y[line_index,:], self.z[line_index,0]
+                x, y, z = self.x[line_index], self.y[line_index], self.z[line_index]
                 print(f'Fitting peaks; index = {line_index}, value = {z}...')
                 if counter == 0:
                     background_estimate = np.amin(y)
                     height_estimate = np.amax(y) - np.amin(y)
-                    fwhm_estimate = 0.25*min([abs(center_estimates[0]-c_est) 
-                                              for c_est in center_estimates[1:]])
+                    fwhm_estimate = 0.1*(np.amax(x)-np.amin(x))
                     if function_name == 'Lorentzian':
                         sigma_estimate = fwhm_estimate/2
                         amplitude_estimate = height_estimate*sigma_estimate*np.pi
@@ -2222,9 +2177,9 @@ class MultipleLineCutsWindow(LineCutWindow):
                 print('Fit finished...')
                 
                 # Save fit values in dictionary
-                peak_values['background_constant'].append(values['bkg_c'])
+                self.peak_values['background_constant'].append(values['bkg_c'])
                 for i in range(n_peaks):
-                    peak_values[f'p{i}_center'].append(values[f'p{i}_center'])
+                    self.peak_values[f'p{i}_center'].append(values[f'p{i}_center'])
                     if function_name == 'Lorentzian':    
                         best_fwhm = 2*values[f'p{i}_sigma']
                         best_height = (values[f'p{i}_amplitude']/
@@ -2233,47 +2188,57 @@ class MultipleLineCutsWindow(LineCutWindow):
                         best_fwhm = 2.35482*values[f'p{i}_sigma']
                         best_height = (values[f'p{i}_amplitude']/
                                        (np.sqrt(2*np.pi)*values[f'p{i}_sigma']))
-                    peak_values[f'p{i}_height'].append(best_height)
-                    peak_values[f'p{i}_fwhm'].append(best_fwhm)
+                    self.peak_values[f'p{i}_height'].append(best_height)
+                    self.peak_values[f'p{i}_fwhm'].append(best_fwhm)
                 self.axes.plot(x, result.best_fit+line_index*self.offset, 'k--')
             self.canvas.draw()
             
-            # Plot peak center positions as dots in main canvas
-            for i in range(n_peaks):
-                if self.orientation == 'vertical':
-                    self.parent.axes.scatter(self.z[line_indices,0], 
-                                             peak_values[f'p{i}_center'], c='r')
-                elif self.orientation == 'horizontal':
-                    self.parent.axes.scatter(peak_values[f'p{i}_center'], 
-                                             self.z[line_indices,0], c='r')
-            self.parent.canvas.draw()
-            
+            if not isinstance(self.parent, list):  
+                # Plot peak center positions as dots in main canvas
+                for i in range(n_peaks):
+                    if self.orientation == 'vertical':
+                        self.parent.axes.scatter(self.z[line_indices], 
+                                                 self.peak_values[f'p{i}_center'], c='r')
+                    elif self.orientation == 'horizontal':
+                        self.parent.axes.scatter(self.peak_values[f'p{i}_center'], 
+                                                 self.z[line_indices], c='r')
+                self.parent.canvas.draw()
+                
             # Calculate properties of peaks
-            peak_values['mean_height'] = [np.mean([peak_values[f'p{i}_height'][j] 
-                                                   for i in range(n_peaks)]) 
-                                          for j in range(self.number)]
-            peak_values['mean_fwhm'] = [np.mean([peak_values[f'p{i}_fwhm'][j] 
-                                                 for i in range(n_peaks)]) 
-                                        for j in range(self.number)]
-            for index, parity in enumerate(['even','odd']):
-                peak_values['mean_spacing_'+parity] = [np.mean([np.abs(peak_values[f'p{i}_center'][j] - 
-                                                                       peak_values[f'p{i+1}_center'][j]) 
-                                                                for i in range(index,n_peaks-1,2)]) 
-                                                       for j in range(self.number)]
-                peak_values['mean_height_'+parity] = [np.mean([peak_values[f'p{i}_height'][j] 
-                                                               for i in range(index,n_peaks,2)]) 
-                                                      for j in range(self.number)]
-                peak_values['mean_fwhm_'+parity] = [np.mean([peak_values[f'p{i}_fwhm'][j] 
-                                                             for i in range(index,n_peaks,2)]) 
-                                                    for j in range(self.number)]
+            if len(self.peak_estimates) > 1:
+                self.peak_values['mean_height'] = [np.mean([self.peak_values[f'p{i}_height'][j] 
+                                                            for i in range(n_peaks)]) 
+                                                   for j in range(len(line_indices))]
+                self.peak_values['mean_fwhm'] = [np.mean([self.peak_values[f'p{i}_fwhm'][j] 
+                                                          for i in range(n_peaks)]) 
+                                                 for j in range(len(line_indices))]
+                for index, parity in enumerate(['even','odd']):
+                    self.peak_values['mean_spacing_'+parity] = [np.mean([np.abs(self.peak_values[f'p{i}_center'][j] - 
+                                                                                self.peak_values[f'p{i+1}_center'][j]) 
+                                                                         for i in range(index,n_peaks-1,2)]) 
+                                                            for j in range(len(line_indices))]
+                    self.peak_values['mean_height_'+parity] = [np.mean([self.peak_values[f'p{i}_height'][j] 
+                                                                        for i in range(index,n_peaks,2)]) 
+                                                               for j in range(len(line_indices))]
+                    self.peak_values['mean_fwhm_'+parity] = [np.mean([self.peak_values[f'p{i}_fwhm'][j] 
+                                                                      for i in range(index,n_peaks,2)]) 
+                                                             for j in range(len(line_indices))]
 
             # Save dictionary with peak properties to file    
             filename, _ = QtWidgets.QFileDialog.getSaveFileName(
-                    self, 'Save peak-fitting data as...', 
-                    os.path.splitext(self.parent.filepath)[0]+'_fitdata', '*.npy')
+                    self, 'Save peak-fitting data as...', 'fitdata', '*.npy')
             if filename:
-                np.save(filename, peak_values)
+                np.save(filename, self.peak_values)
                 print('Peak fitting data saved!')
+                
+            
+            self.parameter_windows = [] 
+            for key in self.peak_values.keys():
+                if len(self.z[line_indices]) == len(self.peak_values[key]):
+                    self.parameter_windows.append(ParameterWindow(self.z[line_indices], 
+                                                                  self.peak_values[key], 
+                                                                  self.zlabel, key))
+                    self.parameter_windows[-1].show()
         
     def add_peak(self, prefix, shape, center, bounds, amplitude, sigma):
         if shape == "Lorentzian":
@@ -2285,24 +2250,94 @@ class MultipleLineCutsWindow(LineCutWindow):
         pars[prefix + 'amplitude'].set(amplitude, min=0)
         pars[prefix + 'sigma'].set(sigma, min=0)
         return peak, pars
-        
-    def plot_parameters(self):
-        self.pfit = np.array(self.fit_parameters).transpose()
-        rows, cols = self.pfit.shape
-        self.pars_window = []
-        for index in range(rows):
-            ylabel = fits.get_names(self.fit_box.currentText()).split(',')[index]
-            self.pars_window.append(ParametersWindow(
-                    self.z[:,0], self.pfit[index], self.zlabel, ylabel))
-            self.pars_window[-1].show()
     
     def colormap_type_edited(self):
         self.colormap_box.currentIndexChanged.disconnect(self.draw_plot)
         self.colormap_box.clear()
-        self.colormap_box.addItems(self.cmaps[self.colormap_type_box.currentText()])
+        self.colormap_box.addItems(cmaps[self.colormap_type_box.currentText()])
         self.colormap_box.currentIndexChanged.connect(self.draw_plot)
         self.draw_plot()
          
+    def draw_plot(self):
+        self.running = True
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+        try:
+            self.offset = float(self.offset_line_edit.text())
+        except Exception as e:
+            print('Invalid offset value!', e)
+            self.offset = 0
+            self.offset_line_edit.setText('0')
+        selected_colormap = cm.get_cmap(self.colormap_box.currentText())
+        line_colors = selected_colormap(np.linspace(0.1,0.9,len(self.parent)))
+        self.x, self.y = [], []
+        self.z = np.arange(len(self.parent))
+        for index, data in enumerate(self.parent):
+            x, y = data.processed_data[0], data.processed_data[1]
+            self.axes.plot(x, y+index*self.offset, 
+                           color=line_colors[index], 
+                           linewidth=data.settings['linewidth'], 
+                           label=f'{data.label}')
+            self.x.append(x)
+            self.y.append(y)
+        if self.check_legend.checkState():
+            self.axes.legend()
+        self.cursor = Cursor(self.axes, useblit=True, 
+                             color='grey', linewidth=0.5)
+        self.xlabel = data.settings['xlabel']
+        self.ylabel = data.settings['ylabel']
+        self.zlabel = ''
+        self.axes.set_xlabel(self.xlabel, size='xx-large')
+        self.axes.set_ylabel(self.ylabel, size='xx-large')
+        self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
+        self.canvas.draw()
+           
+    def draw_fits(self):
+        for index in range(self.number):
+            self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
+                           'k--', linewidth=self.linewidth)         
+        self.canvas.draw()
+        
+    def save_data(self):
+        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'Save Data As...')
+        z = np.hstack([np.repeat(self.z[i], len(self.x[i])) 
+                       for i in range(len(self.z))])
+        x = np.hstack(self.x) 
+        y = np.hstack(self.y)
+        np.savetxt(filename, np.column_stack((z,x,y)))
+
+            
+class MultipleLineCutsWindow(MultiPlotWindow):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle('Inspectra Gadget - Multiple Linecuts Window')
+ 
+    def init_widgets(self):
+        super().init_widgets()        
+        self.number_label = QtWidgets.QLabel('Number of lines:')
+        self.number_line_edit = QtWidgets.QLineEdit('5')
+        self.number_line_edit.setFixedSize(40,20)
+        self.all_lines_button = QtWidgets.QPushButton('All')
+        self.all_lines_button.setFixedSize(35,22)
+        self.check_specify_lines = QtWidgets.QCheckBox('Specify lines:')
+        self.check_specify_lines.clicked.connect(self.draw_plot)
+        self.specify_lines_edit = QtWidgets.QLineEdit('')
+
+    def init_connections(self):
+        super().init_connections()
+        self.number_line_edit.editingFinished.connect(self.draw_plot)
+        self.all_lines_button.clicked.connect(self.clicked_all_lines)
+        self.specify_lines_edit.editingFinished.connect(self.draw_plot)
+               
+    def init_layouts(self):
+        super().init_layouts()
+        self.lines_layout.addWidget(self.number_label)
+        self.lines_layout.addWidget(self.number_line_edit)
+        self.lines_layout.addWidget(self.all_lines_button)
+        self.lines_layout.addWidget(self.check_specify_lines)
+        self.lines_layout.addWidget(self.specify_lines_edit)
+           
     def draw_plot(self):
         self.running = True
         self.figure.clear()
@@ -2336,11 +2371,11 @@ class MultipleLineCutsWindow(LineCutWindow):
                     print('Invalid lines specification!', e)
                     indices = []
                     self.number = 0
-            x = self.parent.processed_data[0][:,indices].transpose()
-            y = self.parent.processed_data[2][:,indices].transpose()
-            z = self.parent.processed_data[1][:,indices].transpose()
-            xlabel = self.parent.settings['xlabel']
-            zlabel = self.parent.settings['ylabel']
+            self.x = self.parent.processed_data[0][:,indices].transpose()
+            self.y = self.parent.processed_data[2][:,indices].transpose()
+            self.z = self.parent.processed_data[1][0,indices]
+            self.xlabel = self.parent.settings['xlabel']
+            self.zlabel = self.parent.settings['ylabel']
         elif self.orientation == 'vertical':
             if not self.check_specify_lines.checkState():
                 indices = np.linspace(0, rows-1, self.number, dtype=int)
@@ -2361,36 +2396,30 @@ class MultipleLineCutsWindow(LineCutWindow):
                     indices = []
                     self.number = 0
 
-            x = self.parent.processed_data[1][indices,:]
-            y = self.parent.processed_data[2][indices,:]
-            z = self.parent.processed_data[0][indices,:]
-            xlabel = self.parent.settings['ylabel']
-            zlabel = self.parent.settings['xlabel']
-        self.labels = [f'{z[i,0]:.5g}' for i in range(self.number)]            
-        ylabel = self.parent.settings['clabel']
-        title = ''
+            self.x = self.parent.processed_data[1][indices,:]
+            self.y = self.parent.processed_data[2][indices,:]
+            self.z = self.parent.processed_data[0][indices,0]
+            self.xlabel = self.parent.settings['ylabel']
+            self.zlabel = self.parent.settings['xlabel']
+        self.labels = [f'{self.z[i]:.5g}' for i in range(self.number)]            
+        self.ylabel = self.parent.settings['clabel']
+        self.title = ''
         line_colors = selected_colormap(np.linspace(0.1,0.9,self.number))
         for index in range(self.number):
-            self.axes.plot(x[index], y[index]+index*self.offset, 
+            self.axes.plot(self.x[index], self.y[index]+index*self.offset, 
                            color=line_colors[index], 
                            linewidth=self.parent.settings['linewidth'], 
                            label=self.labels[index])
         if self.check_legend.checkState():
-            self.axes.legend(title=zlabel)
+            self.axes.legend(title=self.zlabel)
         self.cursor = Cursor(self.axes, useblit=True, 
                              color='grey', linewidth=0.5)
-        self.axes.set_xlabel(xlabel, size='xx-large')
-        self.axes.set_ylabel(ylabel, size='xx-large')
+        self.axes.set_xlabel(self.xlabel, size='xx-large')
+        self.axes.set_ylabel(self.ylabel, size='xx-large')
         self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
-        self.axes.set_title(title, size='x-large')
+        self.axes.set_title(self.title, size='x-large')
         self.canvas.draw()
-           
-    def draw_fits(self):
-        for index in range(self.number):
-            self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
-                           'k--', linewidth=self.linewidth)         
-        self.canvas.draw()
-          
+
     def clicked_all_lines(self):
         rows, cols = self.parent.processed_data[0].shape
         if self.orientation == 'horizontal':
@@ -2398,16 +2427,10 @@ class MultipleLineCutsWindow(LineCutWindow):
         elif self.orientation == 'vertical':
             number = rows
         self.number_line_edit.setText(str(number))
-        self.draw_plot()
+        self.draw_plot()        
+                
         
-    def save_data(self):
-        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
-                self, 'Save Data As...')
-        data = np.array([self.z.flatten(), self.x.flatten(), self.y.flatten()])
-        np.savetxt(filename, data.T)
-            
-        
-class ParametersWindow(QtWidgets.QWidget):
+class ParameterWindow(QtWidgets.QWidget):
     def __init__(self, x, y, xlabel, ylabel):
         super().__init__()
         self.resize(600, 600)
@@ -2420,10 +2443,9 @@ class ParametersWindow(QtWidgets.QWidget):
         self.x = x
         self.y = y
         self.axes.plot(self.x, self.y,'.')
-        self.axes.set_xlabel(xlabel)
-        self.axes.set_ylabel(ylabel)
-        self.axes.tick_params(color=rcParams['axes.edgecolor'])
-        self.canvas.draw()
+        self.axes.set_xlabel(xlabel, size='xx-large')
+        self.axes.set_ylabel(ylabel, size='xx-large')
+        self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
         self.figure.tight_layout(pad=2)
         self.canvas.draw()
         self.save_button = QtWidgets.QPushButton('Save')

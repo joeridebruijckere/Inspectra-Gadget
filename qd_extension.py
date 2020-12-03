@@ -124,11 +124,11 @@ class QdData(main.BaseClassData):
             except:
                 print(f'Could not add channel {channel}...')      
     
-    def prepare_data_for_plot(self, reload_data=False):
-        if not hasattr(self, 'raw_data'):
+    def prepare_data_for_plot(self, reload_data=False, refresh_unit_conversion=False):
+        if not hasattr(self, 'raw_data') or not self.raw_data:
             self.load_and_reshape_data()
             self.set_default_channel()
-            reload_data = True
+            refresh_unit_conversion = True
         elif reload_data:
             self.load_and_reshape_data()
         if self.raw_data:
@@ -136,7 +136,7 @@ class QdData(main.BaseClassData):
             self.process_four_terminal_data()
             if self.rc_filter_correct:
                 self.correct_for_rcfilters()
-            if reload_data:
+            if refresh_unit_conversion:
                 self.filters = []
                 self.reset_labels()
                 self.unit_conversion()
@@ -382,7 +382,7 @@ class QdData(main.BaseClassData):
 
     def add_extension_actions(self, editor, menu):
         channel_menu = menu.addMenu('Change channel to...')
-        for channel in self.channels[len(self.get_columns())-1:]: # TODO not sure if this works in general
+        for channel in self.channels[len(self.get_columns())-1:]:
             action = QtWidgets.QAction(channel, editor)
             channel_menu.addAction(action)
             
@@ -402,12 +402,11 @@ class QdData(main.BaseClassData):
     def do_extension_actions(self, editor, signal):
         if signal.text() == 'Enable RC-filter correction...':
             self.rc_filter_correct = True
-            self.prepare_data_for_plot(reload_data=True)
+            self.prepare_data_for_plot(reload_data=True, refresh_unit_conversion=False)
             editor.update_plots()
         elif signal.text() == 'Disable RC-filter correction...':
             self.rc_filter_correct = False
-            #self.refresh_data()
-            self.prepare_data_for_plot(reload_data=True)
+            self.prepare_data_for_plot(reload_data=True, refresh_unit_conversion=False)
             editor.update_plots()
         elif signal.text() in self.channels:
             channel_index = self.channels.index(signal.text())
@@ -416,7 +415,7 @@ class QdData(main.BaseClassData):
                 self.settings['ylabel'] = signal.text()
             else:                
                 self.settings['clabel'] = signal.text()
-            self.prepare_data_for_plot(reload_data=True)
+            self.prepare_data_for_plot(reload_data=True, refresh_unit_conversion=True)
             editor.update_plots()
             editor.show_current_all()
         elif signal.text() == 'Show full range...':
