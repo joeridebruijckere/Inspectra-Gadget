@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere
 
-Last updated on Oct 28 2020
+Last updated on Nov 27 2020
 
 """
 
@@ -12,12 +12,9 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
 import os
 import copy
-import json
 import io
-from datetime import timedelta, datetime
 from stat import ST_CTIME
 import numpy as np
-from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
@@ -41,7 +38,6 @@ try: # used for single peak fitting
 except ModuleNotFoundError:
     find_peaks_imported = False
 from collections import OrderedDict
-from textwrap import wrap
 try:
     import qdarkstyle # pip install qdarkstyle
     qdarkstyle_imported = True
@@ -62,64 +58,20 @@ DARK_THEME = True
 AUTO_REFRESH_INTERVAL_2D = 1
 AUTO_REFRESH_INTERVAL_3D = 30
 
-# Set default plot settings
-DEFAULT_COLORMAP = 'magma'
-DEFAULT_REVERSE_COLORMAP = False
-DEFAULT_PLOT_SETTINGS = {}
-DEFAULT_PLOT_SETTINGS['title'] = '<filename>'
-DEFAULT_PLOT_SETTINGS['xlabel'] = ''
-DEFAULT_PLOT_SETTINGS['ylabel'] = ''
-DEFAULT_PLOT_SETTINGS['clabel'] = ''
-DEFAULT_PLOT_SETTINGS['titlesize'] = '16'
-DEFAULT_PLOT_SETTINGS['labelsize'] = '16' 
-DEFAULT_PLOT_SETTINGS['ticksize'] = '16'
-DEFAULT_PLOT_SETTINGS['linewidth'] = '1.5'
-DEFAULT_PLOT_SETTINGS['spinewidth'] = '0.8'
-DEFAULT_PLOT_SETTINGS['columns'] = '0,1,2'
-DEFAULT_PLOT_SETTINGS['colorbar'] = 'True'
-DEFAULT_PLOT_SETTINGS['minorticks'] = 'False'
-DEFAULT_PLOT_SETTINGS['delimiter'] = ''
-DEFAULT_PLOT_SETTINGS['linecolor'] = 'black'
-DEFAULT_PLOT_SETTINGS['maskcolor'] = 'black'
-DEFAULT_PLOT_SETTINGS['lut'] = '512'
-DEFAULT_PLOT_SETTINGS['rasterized'] = 'True'
-DEFAULT_PLOT_SETTINGS['dpi'] = '300'
-DEFAULT_PLOT_SETTINGS['transparent'] = 'False'
-DEFAULT_PLOT_SETTINGS['rc-filter'] = ''
-DEFAULT_PLOT_SETTINGS['metadata'] = 'True'
-
 # List of custom presets
 PRESETS = [{'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5',
             'titlesize': '9',
             'canvas_bounds': (0.425,0.4,0.575,0.6), # (left, bottom, right, top)
             'show_meta_settings': False},
-           {'title': '<metadataname>', 'labelsize': '16', 'ticksize': '16', 'spinewidth': '0.8',
-            'titlesize': '16',
+           {'title': '<label>', 'labelsize': '16', 'ticksize': '16', 
+            'spinewidth': '0.8', 'titlesize': '16', 
             'canvas_bounds': (0.425,0.4,0.575,0.6), # (left, bottom, right, top)
             'show_meta_settings': True},
            {'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5'},
            {'title': '', 'labelsize': '9', 'ticksize': '9', 'spinewidth': '0.5'}]
 
-# Default settings meta.json files (Triton 6 data)
-DEFAULT_CHANNEL = 'lockin_curr/X'
-CONVERT_MICROSIEMENS_TO_ESQUAREDH = True
-DEFAULT_VALUE_RCFILTER_CORRECT = False # If True: apply rc-filter correction by default upon loading data
-DEFAULT_RC_FILTER = 8240 # Default resistance rc-filter(s)
-DEFAULT_SHOW_METADATANAME = True
-COMBINATION_GATE_SWEEPS_POSSIBLE = False # TODO fix for general case
-CHANNELS_TO_SHOW = ['source', 'g1', 'g2', 'g3', 'g4', 'bg', 'sg', 'Bx', 'Bz', 'T']
-
-#['source', 'g1', 'g1f', 'g2', 'g2f', 'g3', 'g3f', 
-#                    'g4', 'g4f', 'g7', 'g7f', 'bg', 'Bx', 'Bz', 'T']
-
-# QCoDeS default settings
-DEFAULT_INDEX_DEPENDENT_PARAMETER = 0 # upon opening a dataset the dependent parameter with this index will be plotted
-
-# Editor settings
-PRINT_FUNCTION_CALLS = False # print function commands in terminal when called
-SHOW_ERRORS = False # raise errors for debugging
-
-# Matplotlib settings; font type is chosen such that text (labels, ticks, etc.) is recognized by Illustrator
+# Matplotlib settings; font type is chosen such that text (labels, ticks, ...) 
+# can be recognized by Illustrator
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.fonttype'] = 42
 rcParams['font.family'] = 'sans-serif'
@@ -145,28 +97,22 @@ if DARK_THEME and qdarkstyle_imported:
 
 # Colormaps
 cmaps = OrderedDict()
-cmaps['Uniform'] = [
-    'viridis', 'plasma', 'inferno', 'magma', 'cividis']
-cmaps['Sequential'] = [
-    'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
-    'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
-    'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']
-cmaps['Sequential (2)'] = [
-    'binary', 'gist_yarg', 'gist_gray', 'gray', 'bone', 'pink',
-    'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia',
-    'hot', 'afmhot', 'gist_heat', 'copper']
-cmaps['Diverging'] = [
-    'PiYG', 'PRGn', 'BrBG', 'PuOr', 'RdGy', 'RdBu',
-    'RdYlBu', 'RdYlGn', 'Spectral', 'coolwarm', 'bwr', 'seismic']
+cmaps['Uniform'] = ['viridis', 'plasma', 'inferno', 'magma', 'cividis']
+cmaps['Sequential'] = ['Greys','Purples','Blues','Greens','Oranges','Reds',
+                       'YlOrBr','YlOrRd','OrRd','PuRd','RdPu','BuPu','GnBu', 
+                       'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']
+cmaps['Sequential (2)'] = ['binary','gist_yarg','gist_gray','gray','bone',
+                           'pink','spring','summer','autumn','winter','cool',
+                           'Wistia','hot','afmhot','gist_heat','copper']
+cmaps['Diverging'] = ['PiYG','PRGn','BrBG','PuOr','RdGy','RdBu','RdYlBu',
+                      'RdYlGn','Spectral','coolwarm','bwr','seismic']
 cmaps['Cyclic'] = ['twilight', 'twilight_shifted', 'hsv']
-cmaps['Qualitative'] = [
-    'Pastel1', 'Pastel2', 'Paired', 'Accent',
-    'Dark2', 'Set1', 'Set2', 'Set3',
-    'tab10', 'tab20', 'tab20b', 'tab20c']
-cmaps['Miscellaneous'] = [
-    'flag', 'prism', 'ocean', 'gist_earth', 'terrain', 'gist_stern',
-    'gnuplot', 'gnuplot2', 'CMRmap', 'cubehelix', 'brg',
-    'gist_rainbow', 'rainbow', 'jet', 'nipy_spectral', 'gist_ncar']
+cmaps['Qualitative'] = ['Pastel1','Pastel2','Paired','Accent','Dark2','Set1',
+                        'Set2','Set3','tab10','tab20','tab20b','tab20c']
+cmaps['Miscellaneous'] = ['flag','prism','ocean','gist_earth','terrain',
+                          'gist_stern','gnuplot','gnuplot2','CMRmap',
+                          'cubehelix','brg','gist_rainbow','rainbow','jet',
+                          'nipy_spectral','gist_ncar']
 
 # Add custom hybrid colormaps to matplotlib register
 cmaps['Hybrid'] = ['magma+bone_r','inferno+bone_r']
@@ -184,14 +130,59 @@ for cmap in cmaps['Hybrid']:
 
 # Only include colormaps that are in the matplotlib register
 for cmap_type in cmaps.copy():
-    cmaps[cmap_type][:] = [cmap for cmap in cmaps[cmap_type] if cmap in plt.colormaps()]
+    cmaps[cmap_type][:] = [cmap for cmap in cmaps[cmap_type] 
+                           if cmap in plt.colormaps()]
     if cmaps[cmap_type] == []:
         del cmaps[cmap_type]
         
+FONT_SIZES = ['8', '9', '10', '12', '14', '16', '18', '24']
+SETTINGS_MENU_OPTIONS = OrderedDict()
+SETTINGS_MENU_OPTIONS['title'] = [' ','<label>']
+SETTINGS_MENU_OPTIONS['xlabel'] = ['Gate voltage (V)', 
+                                   '$V_{\mathrm{g}}$ (V)',
+                                   'Bias voltage (mV)', 
+                                   '$V$ (mV)',
+                                   'Magnetic Field (T)', 
+                                   '$B$ (T)', 
+                                   'Angle (degrees)']
+SETTINGS_MENU_OPTIONS['ylabel'] = ['Bias voltage (mV)', 
+                                   '$V$ (mV)', 
+                                   'Gate voltage (V)', 
+                                   '$V_{\mathrm{g}}$ (V)', 
+                                   'd$I$/d$V$ (μS)', 
+                                   'd$I$/d$V$ $(e^{2}/h)$', 
+                                   'Angle (degrees)', 
+                                   'Temperature (mK)']
+SETTINGS_MENU_OPTIONS['clabel'] = ['$I$ (nA)', 
+                                   '$I$ (a.u.)', 
+                                   'Current (nA)', 
+                                   'd$I$/d$V$ (μS)', 
+                                   'd$I$/d$V$ ($G_0$)', 
+                                   'd$I$/d$V$ (a.u.)', 
+                                   'd$I$/d$V$ $(e^{2}/h)$', 
+                                   'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 
+                                   'd$^2I$/d$V^2$ (a.u.)', 
+                                   '|d$^2I$/d$V^2$| (a.u.)']
+SETTINGS_MENU_OPTIONS['titlesize'] = FONT_SIZES
+SETTINGS_MENU_OPTIONS['labelsize'] = FONT_SIZES
+SETTINGS_MENU_OPTIONS['ticksize'] = FONT_SIZES
+SETTINGS_MENU_OPTIONS['colorbar'] = ['True', 'False']
+SETTINGS_MENU_OPTIONS['columns'] = ['0,1,2','0,1,3','0,2,3','1,2,4']
+SETTINGS_MENU_OPTIONS['minorticks'] = ['True','False']
+SETTINGS_MENU_OPTIONS['delimiter'] = [' ',',']
+SETTINGS_MENU_OPTIONS['linecolor'] = ['black', 'red', 'white', 
+                                        'blue', 'green']
+SETTINGS_MENU_OPTIONS['maskcolor'] = ['black','white']
+SETTINGS_MENU_OPTIONS['lut'] = ['128','256','512','1024']
+SETTINGS_MENU_OPTIONS['rasterized'] = ['True','False']
+SETTINGS_MENU_OPTIONS['dpi'] = ['figure','300']
+SETTINGS_MENU_OPTIONS['transparent'] = ['True', 'False']
+SETTINGS_MENU_OPTIONS['shading'] = ['auto', 'flat', 'gouraud', 'nearest']
+
 
 class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def __init__(self):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
         self.window_title = 'Inspectra Gadget'
         self.window_title_auto_refresh = ''
@@ -205,108 +196,35 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.linked_files = []
     
     def init_plot_settings(self):
-        font_sizes = ['8', '9', '10', '12', '18', '24']
-        self.settings_menu_list = OrderedDict()
-        self.settings_menu_list['title'] = ['<filename>','<metadataname>']
-        self.settings_menu_list['xlabel'] = ['Gate voltage (V)', '$V_{\mathrm{g}}$ (V)',
-                                             'Bias voltage (mV)', '$V$ (mV)',
-                                             'Magnetic Field (T)', '$B$ (T)', 'Angle (degrees)']
-        self.settings_menu_list['ylabel'] = ['Bias voltage (mV)', '$V$ (mV)', 'Gate voltage (V)', '$V_{\mathrm{g}}$ (V)', 
-                                             'd$I$/d$V$ (μS)', 'd$I$/d$V$ $(e^{2}/h)$', 'Angle (degrees)', 'Temperature (mK)']
-        self.settings_menu_list['clabel'] = ['$I$ (nA)', '$I$ (a.u.)', 'Current (nA)', 
-                                             'd$I$/d$V$ (μS)', 'd$I$/d$V$ ($G_0$)', 'd$I$/d$V$ (a.u.)', 
-                                             'd$I$/d$V$ $(e^{2}/h)$', 'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 
-                                             'd$^2I$/d$V^2$ (a.u.)', '|d$^2I$/d$V^2$| (a.u.)']
-        self.settings_menu_list['titlesize'] = font_sizes
-        self.settings_menu_list['labelsize'] = font_sizes
-        self.settings_menu_list['ticksize'] = font_sizes
-        self.settings_menu_list['colorbar'] = ['True', 'False']
-        self.settings_menu_list['columns'] = ['0,1,2','0,1,3','0,2,3','1,2,4']
-        self.settings_menu_list['minorticks'] = ['True','False']
-        self.settings_menu_list['delimiter'] = ['',',']
-        self.settings_menu_list['linecolor'] = ['black', 'red', 'white', 'blue', 'green']
-        self.settings_menu_list['maskcolor'] = ['black','white']
-        self.settings_menu_list['lut'] = ['128','256','512','1024']
-        self.settings_menu_list['rasterized'] = ['False','True']
-        self.settings_menu_list['dpi'] = ['figure']
-        self.settings_menu_list['transparent'] = ['True', 'False']
-        self.settings_menu_list['metadata'] = ['True', 'False']
-        table = self.settings_table
-        table.setColumnCount(2)
-        table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
+        self.settings_table.setColumnCount(2)
+        self.settings_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         for col in range(2):
-            table.horizontalHeader().setSectionResizeMode(col, 
-                                  QtWidgets.QHeaderView.ResizeToContents)
-        table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        table.customContextMenuRequested.connect(self.open_plot_settings_menu)
-        self.copied_settings = None
+            h = self.settings_table.horizontalHeader()
+            h.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeToContents)
+        self.settings_table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.settings_table.customContextMenuRequested.connect(self.open_plot_settings_menu)
     
     def init_view_settings(self):
         self.cmaps = cmaps
         for cmap_type in self.cmaps:    
             self.colormap_type_box.addItem(cmap_type)
         self.colormap_box.addItems(list(self.cmaps.values())[0])
-        self.min_line_edit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.max_line_edit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.mid_line_edit.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.copied_view_settings = None
+        self.min_line_edit.setAlignment(QtCore.Qt.AlignRight | 
+                                        QtCore.Qt.AlignVCenter)
+        self.max_line_edit.setAlignment(QtCore.Qt.AlignRight | 
+                                        QtCore.Qt.AlignVCenter)
+        self.mid_line_edit.setAlignment(QtCore.Qt.AlignRight | 
+                                        QtCore.Qt.AlignVCenter)
     
-    def init_filters(self):
-        self.default_filter_settings = {
-                'Derivative': {'Name': 'Derivative', 'Method': 'Midpoint',
-                               'Setting 1': '0', 'Setting 2': '1', 'Checked': 2},
-                'Smoothen': {'Name': 'Smoothen', 'Method': 'Gaussian',
-                             'Setting 1': '0', 'Setting 2': '2', 'Checked': 2},
-                'Sav-Gol': {'Name': 'Sav-Gol', 'Method': 'Y deriv 1',
-                            'Setting 1': '7', 'Setting 2': '2', 'Checked': 2},                               
-                'Crop X': {'Name': 'Crop X', 'Method': 'Absolute',
-                           'Setting 1': '-1', 'Setting 2': '1', 'Checked': 0},                               
-                'Crop Y': {'Name': 'Crop Y', 'Method': 'Absolute',
-                           'Setting 1': '-10', 'Setting 2': '10', 'Checked': 0},
-                'Roll X': {'Name': 'Roll X', 'Method': 'Index',
-                           'Setting 1': '0', 'Setting 2': '0', 'Checked': 0},                               
-                'Roll Y': {'Name': 'Roll Y', 'Method': 'Index',
-                           'Setting 1': '0', 'Setting 2': '0', 'Checked': 0},
-                'Cut X': {'Name': 'Cut X', 'Method': 'Index',
-                          'Setting 1': '0', 'Setting 2': '0', 'Checked': 0},                               
-                'Cut Y': {'Name': 'Cut Y', 'Method': 'Index',
-                          'Setting 1': '0', 'Setting 2': '0', 'Checked': 0},                                
-                'Swap XY': {'Name': 'Swap XY', 'Method': '',
-                            'Setting 1': '', 'Setting 2': '', 'Checked': 2},
-                'Flip': {'Name': 'Flip', 'Method': 'Left Right',
-                         'Setting 1': '', 'Setting 2': '', 'Checked': 2},
-                'Normalize': {'Name': 'Normalize', 'Method': 'Maximum',
-                              'Setting 1': '0', 'Setting 2': '0', 'Checked': 2},
-                'Offset': {'Name': 'Offset', 'Method': 'X',
-                           'Setting 1': '0', 'Setting 2': '', 'Checked': 2},               
-                'Absolute': {'Name': 'Absolute', 'Method': '',
-                             'Setting 1': '', 'Setting 2': '', 'Checked': 2},                 
-                'Multiply': {'Name': 'Multiply', 'Method': 'Z',
-                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
-                'Slope': {'Name': 'Slope', 'Method': '',
-                          'Setting 1': '0', 'Setting 2': '-1', 'Checked': 0},
-                'Logarithm': {'Name': 'Logarithm', 'Method': 'Mask',
-                              'Setting 1': '', 'Setting 2': '', 'Checked': 2},
-                'Band cut': {'Name': 'Band cut', 'Method': 'Y',
-                             'Setting 1': '20', 'Setting 2': '25', 'Checked': 0},
-                'Interp': {'Name': 'Interp', 'Method': 'linear',
-                           'Setting 1': '800', 'Setting 2': '600', 'Checked': 0},
-                'Subtract': {'Name': 'Subtract', 'Method': 'Vertical',
-                             'Setting 1': '0', 'Setting 2': '', 'Checked': 0},
-                'Divide': {'Name': 'Divide', 'Method': 'Z',
-                             'Setting 1': '1', 'Setting 2': '', 'Checked': 2},
-                'Invert': {'Name': 'Invert', 'Method': 'Z',
-                             'Setting 1': '', 'Setting 2': '', 'Checked': 2}}                  
+    def init_filters(self):                
         self.filters_combobox.addItem('<Add Filter>')
-        self.filters_combobox.addItems(filters.get_list())
-        table = self.filters_table
-        table.setColumnCount(4)
-        table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
-        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self.filters_combobox.addItems(Filter.DEFAULT_SETTINGS.keys())
+        self.filters_table.setColumnCount(4)
+        self.filters_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
+        h = self.filters_table.horizontalHeader()
+        h.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         for col in range(1,4):
-            table.horizontalHeader().setSectionResizeMode(col, 
-                                  QtWidgets.QHeaderView.ResizeToContents)
-        self.copied_filters = None
+            h.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeToContents)
         
     def init_connections(self):
         self.open_files_button.clicked.connect(self.open_files)
@@ -347,12 +265,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_current_file.triggered.connect(lambda: self.save_session('current'))
         self.action_all_files.triggered.connect(lambda: self.save_session('all'))
         self.action_checked_files.triggered.connect(lambda: self.save_session('checked'))
-        self.action_merge_raw.triggered.connect(lambda: self.merge_files(raw_data=True))
-        self.action_merge_processed.triggered.connect(lambda: self.merge_files(raw_data=False))
+        self.action_combine_files.triggered.connect(self.combine_plots)
+        self.action_duplicate_file.triggered.connect(self.duplicate_item)
+        self.action_save_data_selected_file.triggered.connect(self.save_processed_data)
         self.track_button.clicked.connect(self.track_button_clicked)
         self.action_open_files_from_folder.triggered.connect(self.open_files_from_folder)
-        self.action_save_files_as_PNG.triggered.connect(lambda: self.save_files_as('.png'))
-        self.action_save_files_as_PDF.triggered.connect(lambda: self.save_files_as('.pdf'))
         self.action_preset_0.triggered.connect(lambda: self.apply_preset(0))
         self.action_preset_1.triggered.connect(lambda: self.apply_preset(1))
         self.action_preset_2.triggered.connect(lambda: self.apply_preset(2))
@@ -360,7 +277,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_refresh_stop.setEnabled(False)
         self.action_link_to_folder.triggered.connect(lambda: self.update_link_to_folder(new_folder=True))
         self.action_unlink_folder.triggered.connect(self.unlink_folder)
-        self.refresh_file_button.clicked.connect(self.refresh_plot)
+        self.refresh_file_button.clicked.connect(self.refresh_files)
         self.up_file_button.clicked.connect(lambda: self.move_file('up'))
         self.down_file_button.clicked.connect(lambda: self.move_file('down'))
         self.file_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -378,188 +295,135 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                              (3,4),(3,4),(3,4),(3,4),(4,4),(4,4),(4,4),(4,4),
                              (4,5),(4,5),(4,5),(4,5),(4,5),(5,5),(5,5),(5,5),
                              (5,5)]
-        if DEFAULT_PLOT_SETTINGS['metadata'] == 'True':
-            self.figure.subplots_adjust(0.17,0.2,0.8,0.85)
+        self.figure.subplots_adjust(top=0.893, bottom=0.137, 
+                                    left=0.121, right=0.86)
 
-    def open_files(self, filenames=None):
-        if PRINT_FUNCTION_CALLS:
-            print('open_files')
-        try:
-            if not filenames:
-                if qcodes_imported:
-                    filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
-                            self, 'Open File', '', 'Data Files (*.dat *.npy *.db)')
-                else:                    
-                    filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(
-                            self, 'Open File', '', 'Data Files (*.dat *.npy)')
-            if filenames:
-                self.file_list.itemChanged.disconnect(self.file_checked)
-                for filename in filenames:
-                    print('Open '+filename)
-                    extension = os.path.splitext(filename)[1]
-                    if extension == '.dat': 
-                        self.add_file(filename)
-                    elif extension == '.npy':
-                        item_data_all = np.load(filename, allow_pickle=True)
-                        for item_data in item_data_all:
-                            self.add_file(item_data['File Name'], data=item_data)
-                    elif extension == '.db': # QCoDeS database
-                        qc.initialise_or_create_database_at(filename)
-                        exp = qc.load_last_experiment()
-                        datasets = exp.data_sets()
-                        for dataset in datasets:
-                            filename = 'Run #{} {} ({}) {}'.format(dataset.captured_run_id, dataset.exp_name, 
-                                                                   dataset.sample_name, dataset.run_timestamp())
-                            self.add_file(filename, data=dataset)
+    def open_files(self, filepaths=None):
+        self.file_list.itemChanged.disconnect(self.file_checked)
+        if not filepaths:
+            filepaths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+                self, 'Open File', '', 'Data Files (*.dat *.npy *.db)')
+        if filepaths:
+            for filepath in filepaths:
+                try:
+                    print(f'Open {filepath}...')
+                    filename, extension = os.path.splitext(filepath)
+                    if extension == '.npy': # Numpy files (saved session)
+                        dataset_list = np.load(filepath, allow_pickle=True)
+                        for dataset in dataset_list:
+                            try:
+                                item = DataItem(NumpyData(filepath, self.canvas, dataset))
+                                self.file_list.addItem(item)
+                            except Exception as e:
+                                print(f'Failed to add NumPy dataset '
+                                      f'{dataset["File Name"]}...', e)
+                    
+                    elif extension == '.db': # QCoDeS files
+                        if qcodes_imported:
+                            qc.initialise_or_create_database_at(filepath)
+                            datasets = qc.load_last_experiment().data_sets()
+                            for dataset in datasets:
+                                try:
+                                    item = DataItem(qcodes_extension.QCodesData(filepath, self.canvas, dataset))
+                                    self.file_list.addItem(item)
+                                except Exception as e:
+                                    print(f'Failed to add QCoDes dataset '
+                                          f'#{dataset.captured_run_id}...', e)
+                        else:
+                            print('QCoDeS module not imported!')
+                    
+                    elif (os.path.basename(filepath) == 'data.dat' and # Matlab qd files
+                          os.path.isfile(os.path.dirname(filepath)+'/meta.json')):
+                        metapath = os.path.dirname(filepath)+'/meta.json'
+                        item = DataItem(qd_extension.QdData(filepath, self.canvas, metapath))
+                        self.file_list.addItem(item)
+                    
+                    else: # bare column-based data file
+                        item = DataItem(BaseClassData(filepath, self.canvas))
+                        self.file_list.addItem(item)
+                except Exception as e:
+                    print(f'Failed to open {filepath}...', e)
+
+            if self.file_list.count() > 0:
                 last_item = self.file_list.item(self.file_list.count()-1)
                 self.file_list.setCurrentItem(last_item)
                 for item_index in range(self.file_list.count()-1):
                     self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-                self.show_current_all()
-                self.file_list.itemChanged.connect(self.file_checked)
                 last_item.setCheckState(QtCore.Qt.Checked)
-        except:
-            print('Could not open file(s)...')
-            if SHOW_ERRORS:
-                raise
-            
-    def add_file(self, file, data=None, do_load_data=True):
-        if PRINT_FUNCTION_CALLS:
-            print('add_file')
-        item = QtWidgets.QListWidgetItem()
-        try:
-            item.setData(QtCore.Qt.UserRole, 
-                         Data(filepath=file, canvas=self.canvas, 
-                              data=data, do_load_data=do_load_data))
-            item.setText(os.path.basename(file))
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Unchecked)
-            self.file_list.addItem(item)
-            if item.data(QtCore.Qt.UserRole).meta_data:
-                item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)
-        except:
-            print('Could not add', file,'...')
-            if SHOW_ERRORS:
-                raise
+                self.file_checked(last_item)
+        self.file_list.itemChanged.connect(self.file_checked)
     
     def remove_files(self, which='current'):
-        if PRINT_FUNCTION_CALLS:
-            print('remove_files')
         update_plots = False
         if self.file_list.count() > 0:
             if which == 'current':
                 items = [self.file_list.currentItem()]
             elif which == 'all':
                 items = [self.file_list.item(n) for n in range(self.file_list.count())]
-            for item in items:
-                data = item.data(QtCore.Qt.UserRole) 
-                if data.filepath in self.linked_files and data.duplicate == False:
-                    self.linked_files.remove(item.data(QtCore.Qt.UserRole).filepath)
+            for item in items: 
+                if (item.data.filepath in self.linked_files 
+                    and not hasattr(item, 'duplicate')):
+                    self.linked_files.remove(item.data.filepath)
                 if item.checkState() == 2:
                     update_plots = True
                 index = self.file_list.row(item)
                 self.file_list.takeItem(index)
                 del item
-
         self.show_current_all()
         if update_plots: 
             self.update_plots()
     
     def file_checked(self, item):
-        if PRINT_FUNCTION_CALLS:
-            print('file_checked')
-        try:
-            if item.checkState() == 2:
-                self.file_list.setCurrentItem(item)
-            self.update_plots()
-        except:
-            print('Could not update plot(s)...')
-            if SHOW_ERRORS:
-                raise
+        if item.checkState() == 2:
+            self.file_list.setCurrentItem(item)
+        self.update_plots()
     
     def file_clicked(self):
-        if PRINT_FUNCTION_CALLS:
-            print('file_clicked')
-        try:
-            self.show_current_all()
-        except:
-            print('Could not show current settings...')
-            if SHOW_ERRORS:
-                raise
+        self.show_current_all()
             
     def file_double_clicked(self, item):
-        if PRINT_FUNCTION_CALLS:
-            print('file_double_clicked')
-        try:
-            self.file_list.itemChanged.disconnect(self.file_checked)
-            for item_index in range(self.file_list.count()):
-                self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-            item.setCheckState(QtCore.Qt.Checked)
-            self.file_list.itemChanged.connect(self.file_checked)
-            self.update_plots()
-        except:
-            print('Could not update plot(s)...')
-            if SHOW_ERRORS:
-                raise
+        self.file_list.itemChanged.disconnect(self.file_checked)
+        for item_index in range(self.file_list.count()):
+            self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
+        item.setCheckState(QtCore.Qt.Checked)
+        self.file_list.itemChanged.connect(self.file_checked)
+        self.update_plots()
     
-    def update_plots(self, reset_view_settings=True):
-        if PRINT_FUNCTION_CALLS:
-            print('update_plots')
+    def update_plots(self, update_data=True):
         self.figure.clear()
-        file_list = self.file_list
-        checked_items = [file_list.item(index) for index in range(file_list.count()) 
-                         if file_list.item(index).checkState() == 2]
+        checked_items = self.get_checked_items()
         if checked_items:
-            self.subplot_rows, self.subplot_cols = self.subplot_grid[len(checked_items)-1]
+            rows, cols = self.subplot_grid[len(checked_items)-1]
             for index, item in enumerate(checked_items):
                 try:
-                    data = item.data(QtCore.Qt.UserRole)
-                    if data.processed_data == None: # if data is loaded for first time
-                        data.load_data()
-                        if data.meta_data:
-                            data.interpret_meta_file()
-                            data.processed_to_raw()
-                            data.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
-                            data.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
-                        else:
-                            data.apply_all_filters()
-                    data.figure = self.figure
-                    data.axes = data.figure.add_subplot(
-                            self.subplot_rows, self.subplot_cols, index+1)
-                    
-                    if len(data.columns) == 2:
-                        data.add_plot_2d()
-                    else:
-                        data.add_plot()
-                        if reset_view_settings:
-                            data.reset_view_settings()
-                        data.apply_view_settings()
-                        try:
-                            data.linecut_window
-                        except AttributeError:
-                            pass
-                        else:
-                            data.update_linecut()
-                        try:
-                            data.multi_linecuts_window
-                        except AttributeError:
-                            pass
-                        else:
-                            if data.multi_linecuts_window.isVisible():
-                                data.update_multiple_linecuts()
-                except:
-                    print('Could not open', data.filepath)
+                    if update_data:
+                        item.data.prepare_data_for_plot()
+                    item.data.figure = self.figure
+                    item.data.axes = item.data.figure.add_subplot(rows, cols, index+1)
+                    item.data.add_plot(dim=len(item.data.get_columns()))
+                    if hasattr(item.data, 'linecut_window'):
+                        item.data.linecut_window.update()
+                    if hasattr(item.data, 'multiple_linecuts_window'):
+                        if item.data.multiple_linecuts_window.isVisible():
+                            item.data.multiple_linecuts_window.update()
+                except Exception as e:
+                    print(f'Could not plot {item.data.filepath}...', e)
                     raise
         self.show_current_all()
         self.canvas.draw()
+        if hasattr(self, 'live_track_item') and self.live_track_item:
+            if (self.live_track_item.checkState() and 
+                self.track_button.text() == 'Stop' and 
+                hasattr(self.live_track_item.data, 'remaining_time_string')):
+                self.remaining_time_label.setText(self.live_track_item.data.remaining_time_string)
+            else:
+                self.remaining_time_label.setText('')
           
-    def refresh_plot(self):
-        if PRINT_FUNCTION_CALLS:
-            print('refresh_plot')
-        current_item = self.file_list.currentItem()
-        if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
-            data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
+    def refresh_files(self):
+        checked_items = self.get_checked_items()
+        if checked_items:
+            for item in checked_items:
+                item.data.prepare_data_for_plot(reload_data=True)
             self.update_plots()
         if self.linked_folder:
             old_number_of_items = self.file_list.count()
@@ -571,13 +435,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.track_button_clicked()
             
     def to_next_file(self):
-        if PRINT_FUNCTION_CALLS:
-            print('to_next_file')
-        checked_items = [(self.file_list.item(index), index) for index in range(self.file_list.count()) 
-                         if self.file_list.item(index).checkState() == 2]
-        if len(checked_items) == 1 and self.file_list.count() > 1 and checked_items[0][1]+1 < self.file_list.count():
-            item = checked_items[0][0]
-            next_item = self.file_list.item(checked_items[0][1]+1)
+        checked_items, indices = self.get_checked_items(return_indices=True)
+        if (len(checked_items) == 1 and self.file_list.count() > 1 and 
+            indices[0]+1 < self.file_list.count()):
+            item = checked_items[0]
+            next_item = self.file_list.item(indices[0]+1)
             self.file_list.itemChanged.disconnect(self.file_checked)
             item.setCheckState(QtCore.Qt.Unchecked)
             next_item.setCheckState(QtCore.Qt.Checked)
@@ -586,88 +448,95 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.update_plots()
         
     def to_previous_file(self):
-        if PRINT_FUNCTION_CALLS:
-            print('to_previous_file')
-        checked_items = [(self.file_list.item(index), index) for index in range(self.file_list.count()) 
-                         if self.file_list.item(index).checkState() == 2]
-        if len(checked_items) == 1 and self.file_list.count() > 1 and checked_items[0][1] > 0:
-            item = checked_items[0][0]
-            previous_item = self.file_list.item(checked_items[0][1]-1)
+        checked_items, indices = self.get_checked_items(return_indices=True)
+        if (len(checked_items) == 1 and self.file_list.count() > 1 
+            and indices[0] > 0):
+            item = checked_items[0]
+            previous_item = self.file_list.item(indices[0]-1)
             self.file_list.itemChanged.disconnect(self.file_checked)
             item.setCheckState(QtCore.Qt.Unchecked)
             previous_item.setCheckState(QtCore.Qt.Checked)
             self.file_list.setCurrentItem(previous_item)
             self.file_list.itemChanged.connect(self.file_checked)
             self.update_plots()
+            
+    def get_checked_items(self, return_indices = False):
+        indices = [index for index in range(self.file_list.count()) 
+                   if self.file_list.item(index).checkState() == 2]
+        checked_items = [self.file_list.item(index) for index in indices]
+        if return_indices:    
+            return checked_items, indices
+        else:
+            return checked_items
         
     def track_button_clicked(self):
-        if PRINT_FUNCTION_CALLS:
-            print('track_button_clicked')
-        if self.track_button.text() == 'Track':
-            last_item = self.file_list.item(self.file_list.count()-1)
-            data = last_item.data(QtCore.Qt.UserRole)
-            if len(data.columns) == 2: # if file is 2D
-                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
-            else: # if file is 3D
-                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
+        current_item = self.file_list.currentItem()
+        if (self.track_button.text() == 'Track' and 
+            current_item and current_item.checkState() and
+            not current_item.data.file_finished()):
+            self.live_track_item = current_item
+            self.live_track_item.setText('[LIVE] '+self.live_track_item.data.label)
+            self.live_track_item.data.prepare_data_for_plot(reload_data=True)
+            if self.live_track_item.data.raw_data:
+                if len(self.live_track_item.data.get_columns()) == 3: # if file is 3D
+                    self.start_auto_refresh(AUTO_REFRESH_INTERVAL_3D)
+                elif len(self.live_track_item.data.get_columns()) == 2: # if file is 2D
+                    self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D)
+            else:
+                self.start_auto_refresh(AUTO_REFRESH_INTERVAL_2D, 
+                                        wait_for_file=True)
         elif self.track_button.text() == 'Stop':
             self.stop_auto_refresh()
         
-    def start_auto_refresh(self, time_interval):
-        if PRINT_FUNCTION_CALLS:
-            print('start_auto_refresh')
+    def start_auto_refresh(self, time_interval, wait_for_file=False):
         self.track_button.setText('Stop')
         self.auto_refresh_timer = QtCore.QTimer()
         self.auto_refresh_timer.setInterval(time_interval*1000)
-        self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
+        if wait_for_file:
+            self.auto_refresh_timer.timeout.connect(self.wait_for_file_call)
+        else:
+            self.auto_refresh_timer.timeout.connect(self.auto_refresh_call)
         self.action_refresh_stop.setEnabled(True)
         self.auto_refresh_timer.start()
         self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
         self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
         self.auto_refresh_call()
         
+    def wait_for_file_call(self):
+        if self.live_track_item and self.live_track_item.checkState():
+            self.live_track_item.data.prepare_data_for_plot(reload_data=True)
+            if self.live_track_item.data.raw_data:
+                self.auto_refresh_timer.stop()
+                self.track_button.setText('Track')
+                self.track_button_clicked()            
+            
     def auto_refresh_call(self):
-        if self.linked_folder:
-            self.update_link_to_folder(new_folder=False)
-        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled (Refreshing...)'
-        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
-        checked_items = [self.file_list.item(index) for index in range(self.file_list.count()) 
-                         if self.file_list.item(index).checkState() == 2]        
-        # Refresh all checked items
-        if checked_items:
-            for index, item in enumerate(checked_items):
-                item.data(QtCore.Qt.UserRole).refresh_data(update_color_limits=False, 
-                                                           refresh_unit_conversion=False)
-        self.update_plots()
-        self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
-        self.setWindowTitle(self.window_title+self.window_title_auto_refresh)        
-        
-        # Update progress of last item (if checked)
-        last_item = self.file_list.item(self.file_list.count()-1)
-        data = last_item.data(QtCore.Qt.UserRole)
-        if last_item.checkState() == 2 and data.last_modified_time:
-            if datetime.now().timestamp() - data.last_modified_time > 600 or data.progress_fraction == 1:
+        if self.live_track_item and self.live_track_item.checkState():
+            if self.live_track_item.data.file_finished():
                 print('Stop auto refresh...')
-                data.remaining_time_string = ''
+                self.live_track_item.data.remaining_time_string = ''
                 self.stop_auto_refresh()
             else:
-                self.remaining_time_label.setText(data.remaining_time_string)
-        else:
-            self.remaining_time_label.setText('')
-            
+                if hasattr(self.live_track_item.data, 'remaining_time_string'):
+                    self.remaining_time_label.setText(self.live_track_item.data.remaining_time_string)
+                else:
+                    self.remaining_time_label.setText('')
+            self.window_title_auto_refresh = ' - Auto-Refreshing Enabled (Refreshing...)'
+            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+            self.refresh_files()
+            self.window_title_auto_refresh = ' - Auto-Refreshing Enabled'
+            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
+        
     def stop_auto_refresh(self):
-        if PRINT_FUNCTION_CALLS:
-            print('stop_auto_refresh')
         self.track_button.setText('Track')
         self.auto_refresh_timer.stop()
         self.action_refresh_stop.setEnabled(False)
         self.window_title_auto_refresh = ''
         self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
         self.remaining_time_label.setText('')
+        self.live_track_item.setText(self.live_track_item.data.label)
         
     def move_file(self, direction):
-        if PRINT_FUNCTION_CALLS:
-            print('move_file')
         current_item = self.file_list.currentItem()
         if current_item:
             current_row = self.file_list.currentRow()
@@ -678,7 +547,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             else:
                 new_row = current_row
             if new_row != current_row:
-                if current_item.checkState() == 2 and self.file_list.item(new_row).checkState() == 2:
+                if (current_item.checkState() == 2 and 
+                    self.file_list.item(new_row).checkState() == 2):
                     update_canvas = True
                 else:
                     update_canvas = False
@@ -687,42 +557,35 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.file_list.setCurrentRow(new_row)
                 if update_canvas:
                     self.update_plots()
-                    self.canvas.draw()
         
     def show_current_all(self):
-        if PRINT_FUNCTION_CALLS:
-            print('show_current_all')
         self.show_current_plot_settings()
         self.show_current_view_settings()
         self.show_current_filters()
     
     def show_current_plot_settings(self):
-        if PRINT_FUNCTION_CALLS:
-            print('showCurrentSettings')
-        item = self.file_list.currentItem()
-        if item:
-            table = self.settings_table
-            table.itemChanged.disconnect(self.plot_setting_edited)
-            table.setRowCount(0)
-            settings = item.data(QtCore.Qt.UserRole).settings
-            for key, value in list(settings.items()):
-                row = table.rowCount()
-                table.insertRow(row)
-                property_item = QtWidgets.QTableWidgetItem(key)
-                property_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-                table.setItem(row, 0, property_item)
-                table.setItem(row, 1, QtWidgets.QTableWidgetItem(value))
-            table.itemChanged.connect(self.plot_setting_edited)
-            
-    def show_current_view_settings(self):
-        if PRINT_FUNCTION_CALLS:
-            print('show_current_view_settings')
         current_item = self.file_list.currentItem()
         if current_item:
-            settings = current_item.data(QtCore.Qt.UserRole).view_settings
-            self.min_line_edit.setText('%.4g' % settings['Minimum'])
-            self.max_line_edit.setText('%.4g' % settings['Maximum'])
-            self.mid_line_edit.setText('%.4g' % settings['Midpoint'])
+            self.settings_table.itemChanged.disconnect(self.plot_setting_edited)
+            self.settings_table.setRowCount(0)
+            settings = current_item.data.settings
+            for key, value in list(settings.items()):
+                row = self.settings_table.rowCount()
+                self.settings_table.insertRow(row)
+                property_item = QtWidgets.QTableWidgetItem(key)
+                property_item.setFlags(QtCore.Qt.ItemIsSelectable | 
+                                       QtCore.Qt.ItemIsEnabled)
+                self.settings_table.setItem(row, 0, property_item)
+                self.settings_table.setItem(row, 1, QtWidgets.QTableWidgetItem(value))
+            self.settings_table.itemChanged.connect(self.plot_setting_edited)
+            
+    def show_current_view_settings(self):
+        current_item = self.file_list.currentItem()
+        if current_item:
+            settings = current_item.data.view_settings
+            self.min_line_edit.setText(f'{settings["Minimum"]:.4g}')
+            self.max_line_edit.setText(f'{settings["Maximum"]:.4g}')
+            self.mid_line_edit.setText(f'{settings["Midpoint"]:.4g}')
             if settings['Locked']:
                 self.lock_checkbox.setCheckState(QtCore.Qt.Checked)
             else:
@@ -732,11 +595,11 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             else:
                 self.mid_checkbox.setCheckState(QtCore.Qt.Unchecked)
             self.colormap_type_box.currentIndexChanged.disconnect(self.colormap_type_edited)
-            self.colormap_type_box.setCurrentText(settings['Color Map Type'])
+            self.colormap_type_box.setCurrentText(settings['Colormap Type'])
             self.colormap_type_box.currentIndexChanged.connect(self.colormap_type_edited)
             self.fill_colormap_box()
             self.colormap_box.currentIndexChanged.disconnect(self.colormap_edited)
-            self.colormap_box.setCurrentText(settings['Color Map'])
+            self.colormap_box.setCurrentText(settings['Colormap'])
             self.colormap_box.currentIndexChanged.connect(self.colormap_edited)
             if settings['Reverse']:
                 self.reverse_colors_box.setCheckState(QtCore.Qt.Checked)
@@ -749,244 +612,192 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.mid_checkbox.setCheckState(QtCore.Qt.Unchecked)
     
     def show_current_filters(self):
-        if PRINT_FUNCTION_CALLS:
-            print('show_current_filters')
-        table = self.filters_table
-        table.setRowCount(0)
+        self.filters_table.setRowCount(0)
         current_item = self.file_list.currentItem()
         if current_item:
-            filters = current_item.data(QtCore.Qt.UserRole).filters
-            for f in filters:
+            for _ in current_item.data.filters:
                 self.append_filter_to_table()
     
     def plot_setting_edited(self):
-        if PRINT_FUNCTION_CALLS:
-            print('plot_setting_edited')
         current_item = self.file_list.currentItem()
-        data = current_item.data(QtCore.Qt.UserRole)
-        data.old_settings = data.settings.copy()
         if current_item:
-            settings = data.settings
-            table = self.settings_table
-            row = table.currentRow()
-            setting_name = table.item(row, 0).text()
-            value = table.item(row, 1).text()
-            settings[setting_name] = value
-            table.clearFocus()
+            current_item.data.old_settings = current_item.data.settings.copy()
+            row = self.settings_table.currentRow()
+            setting_name = self.settings_table.item(row, 0).text()
+            value = self.settings_table.item(row, 1).text()
+            current_item.data.settings[setting_name] = value
+            self.settings_table.clearFocus()
             try:
-                if setting_name == 'columns':
-                    data.columns = [int(s) for s in value.split(',')]
-                    data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
-                    self.update_plots()
-                    self.show_current_all()            
-                elif setting_name == 'delimiter':
-                    data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
-                    self.update_plots()
-                    self.show_current_all()
-                elif setting_name == 'rc-filter':
-                    data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
-                    self.update_plots()
-                    self.show_current_all()
+                if setting_name == 'columns' or setting_name == 'delimiter':
+                    current_item.data.prepare_data_for_plot(reload_data=True)
+                    self.update_plots()           
                 elif setting_name == 'linecolor':
-                    for line in data.axes.get_lines():
+                    for line in current_item.data.axes.get_lines():
                         line.set_color(value)
                     self.canvas.draw()
-                elif setting_name == 'maskcolor':
-                    data.apply_colormap()
-                    self.canvas.draw()
-                elif setting_name == 'lut':
-                    data.apply_colormap()
-                    self.canvas.draw()
-                elif setting_name == 'rasterized' or setting_name == 'colorbar':
+                elif setting_name == 'maskcolor' or setting_name == 'lut':
+                    current_item.data.apply_colormap()
+                elif (setting_name == 'rasterized' or setting_name == 'colorbar'
+                      or setting_name == 'minorticks'):
                     self.update_plots()
-                elif setting_name == 'minorticks':
+                elif setting_name == 'shading':
                     self.update_plots()
-                elif setting_name == 'metadata':
-                    self.update_plots()
-                data.apply_plot_settings()
+                current_item.data.extension_setting_edited(self, setting_name)
+                current_item.data.apply_plot_settings()
                 self.canvas.draw()
-            except: # if invalid value is put in: reset to previous settings
-                print('Invalid value of plot setting!')
+            except Exception as e: # if invalid value is typed: reset to previous settings
+                print('Invalid value of plot setting!', e)
                 self.paste_plot_settings(which='old')
     
     def view_setting_edited(self, edited_setting):
         current_item = self.file_list.currentItem()
-        data = current_item.data(QtCore.Qt.UserRole)
-        data.old_view_settings = data.view_settings.copy()
+        view_settings = current_item.data.view_settings
+        current_item.data.old_view_settings = view_settings.copy()
         if current_item:
-            view_settings = data.view_settings
             try:
-                if edited_setting == 'Minimum':
-                    new_value = float(self.min_line_edit.text())
+                if edited_setting == 'Minimum' or edited_setting == 'Maximum':
+                    if edited_setting == 'Minimum':
+                        text_box = self.min_line_edit
+                    else:
+                        text_box = self.max_line_edit
+                    new_value = float(text_box.text())
                     view_settings[edited_setting] = new_value
-                    self.min_line_edit.setText('%.4g' % new_value)
-                    self.min_line_edit.clearFocus()
-                    data.reset_midpoint()
-                    self.mid_line_edit.setText('%.4g' % view_settings['Midpoint'])
-                elif edited_setting == 'Maximum':
-                    new_value = float(self.max_line_edit.text())
-                    view_settings[edited_setting] = new_value
-                    self.max_line_edit.setText('%.4g' % new_value)
-                    self.max_line_edit.clearFocus()
-                    data.reset_midpoint()
-                    self.mid_line_edit.setText('%.4g' % view_settings['Midpoint'])
+                    text_box.setText(f'{new_value:.4g}')
+                    text_box.clearFocus()
+                    current_item.data.reset_midpoint()
+                    self.mid_line_edit.setText(f'{view_settings["Midpoint"]:.4g}')
                 elif edited_setting == 'Midpoint':
                     if self.mid_line_edit.text():
                         new_value = float(self.mid_line_edit.text())
                         view_settings[edited_setting] = new_value
                     else:
-                        data.reset_midpoint()
+                        current_item.data.reset_midpoint()
                         new_value = view_settings[edited_setting]
-                    self.mid_line_edit.setText('%.4g' % new_value)
+                    self.mid_line_edit.setText(f'{new_value:.4g}')
                     self.mid_line_edit.clearFocus()
                 elif edited_setting == 'Locked':
-                    view_settings[edited_setting] = self.lock_checkbox.checkState()
+                    if self.lock_checkbox.isChecked():
+                        view_settings[edited_setting] = True
+                    else:
+                        view_settings[edited_setting] = False
                 elif edited_setting == 'MidLock':
-                    view_settings[edited_setting] = self.mid_checkbox.checkState()
-                data.apply_view_settings()
+                    if self.mid_checkbox.isChecked():
+                        view_settings[edited_setting] = True
+                    else:
+                        view_settings[edited_setting] = False
+                current_item.data.apply_view_settings()
                 self.canvas.draw()
-            except:
-                print('Invalid value of view setting!')
+            except Exception as e:
+                print('Invalid value of view setting!', e)
                 self.paste_view_settings(which='old')
                 
-    
     def fill_colormap_box(self):
-        if PRINT_FUNCTION_CALLS:
-            print('fill_colormap_box')
         self.colormap_box.currentIndexChanged.disconnect(self.colormap_edited)
         self.colormap_box.clear()
         self.colormap_box.addItems(self.cmaps[self.colormap_type_box.currentText()])
         self.colormap_box.currentIndexChanged.connect(self.colormap_edited)
     
     def colormap_type_edited(self):
-        if PRINT_FUNCTION_CALLS:
-            print('colormap_type_edited')
         self.fill_colormap_box()
         self.colormap_edited()
         
     def colormap_edited(self):
-        if PRINT_FUNCTION_CALLS:
-            print('colormap_edited')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
-            settings = data.view_settings
-            settings['Color Map Type'] = self.colormap_type_box.currentText()
-            settings['Color Map'] = self.colormap_box.currentText()
+            settings = current_item.data.view_settings
+            settings['Colormap Type'] = self.colormap_type_box.currentText()
+            settings['Colormap'] = self.colormap_box.currentText()
             settings['Reverse'] = self.reverse_colors_box.isChecked()
             if current_item.checkState():
-                data.apply_colormap()
+                current_item.data.apply_colormap()
                 self.canvas.draw()
     
     def filters_table_edited(self, item):
-        if PRINT_FUNCTION_CALLS:
-            print('filters_table_edited')
         current_item = self.file_list.currentItem()
-        data = current_item.data(QtCore.Qt.UserRole)
-        data.oldFilters = copy.deepcopy(data.filters)
+        current_item.data.old_filters = copy.deepcopy(current_item.data.filters)
         if current_item:   
-            table = self.filters_table
             try:
-                filterItem = table.item(item.row(), 0)
-                filter_settings = data.filters[item.row()]
-                filter_settings['Checked'] = filterItem.checkState()
-                filter_settings['Name'] = filterItem.text()
-                filter_settings['Method'] = table.cellWidget(item.row(), 1).currentText()
-                filter_settings['Setting 1'] = table.item(item.row(), 2).text()
-                filter_settings['Setting 2'] = table.item(item.row(), 3).text()
-                table.clearFocus()
-                data.apply_all_filters(update_color_limits=False)
-                data.reset_view_settings()
+                row = item.row()
+                filt = current_item.data.filters[row]
+                filter_item = self.filters_table.item(row, 0)
+                filt.method = self.filters_table.cellWidget(row, 1).currentText()
+                filt.settings = [self.filters_table.item(row, 2).text(), 
+                                 self.filters_table.item(row, 3).text()]
+                filt.checkstate = filter_item.checkState()
+                self.filters_table.clearFocus()
+                current_item.data.apply_all_filters()
+                current_item.data.reset_view_settings()
                 if current_item.checkState():
-                    if ((filterItem.checkState()) | (item.column() == 0)):
-                        self.update_plots()
-                        self.show_current_filters()
-                        self.show_current_view_settings()
-            except:
-                print('Invalid value of filter!')
+                    self.update_plots()
+                    self.show_current_filters()
+                    self.show_current_view_settings()
+            except Exception as e:
+                print('Invalid value of filter!', e)
                 self.paste_filters(which='old')
     
     def copy_plot_settings(self):
-        if PRINT_FUNCTION_CALLS:
-            print('copy_plot_settings')
         current_item = self.file_list.currentItem()
         if current_item:
-            self.copied_settings = current_item.data(QtCore.Qt.UserRole).settings.copy()
+            self.copied_settings = current_item.data.settings.copy()
     
     def copy_filters(self):
-        if PRINT_FUNCTION_CALLS:
-            print('copy_filters')
         current_item = self.file_list.currentItem()
         if current_item:
-            self.copied_filters = copy.deepcopy(current_item.data(QtCore.Qt.UserRole).filters)
+            self.copied_filters = copy.deepcopy(current_item.data.filters)
             
     def copy_view_settings(self):
-        if PRINT_FUNCTION_CALLS:
-            print('copy_view_settings')
         current_item = self.file_list.currentItem()
         if current_item:
-            self.copied_view_settings = current_item.data(QtCore.Qt.UserRole).view_settings.copy()
+            self.copied_view_settings = current_item.data.view_settings.copy()
     
     def paste_plot_settings(self, which='copied'):
-        if PRINT_FUNCTION_CALLS:
-            print('paste_plot_settings')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
             if which == 'copied':
                 if self.copied_settings:
-                    data.settings = self.copied_settings.copy()
+                    current_item.data.settings = self.copied_settings.copy()
             elif which == 'default':
-                data.settings = data.default_settings.copy()
+                current_item.data.settings = current_item.data.DEFAULT_PLOT_SETTINGS.copy()
             elif which == 'old':
-                data.settings = data.old_settings.copy()
+                current_item.data.settings = current_item.data.old_settings.copy()
             self.show_current_plot_settings()
             if current_item.checkState():
-                data.apply_plot_settings()
+                current_item.data.apply_plot_settings()
                 self.canvas.draw()
     
     def paste_filters(self, which='copied'):
-        if PRINT_FUNCTION_CALLS:
-            print('paste_filters')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
             if which == 'copied':
                 if self.copied_filters:
-                    data.filters = copy.deepcopy(self.copied_filters)
+                    current_item.data.filters = copy.deepcopy(self.copied_filters)
             elif which == 'old':
-                data.filters = copy.deepcopy(data.oldFilters)
+                current_item.data.filters = copy.deepcopy(current_item.data.old_filters)
             self.show_current_filters()
-            data.apply_all_filters()
+            current_item.data.apply_all_filters()
             self.show_current_view_settings()
             if current_item.checkState():
                 self.update_plots()
                 self.canvas.draw()
 
     def paste_view_settings(self, which='copied'):
-        if PRINT_FUNCTION_CALLS:
-            print('paste_view_settings')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
             if which == 'copied':
                 if self.copied_view_settings:
-                    data.view_settings = self.copied_view_settings.copy()
+                    current_item.data.view_settings = self.copied_view_settings.copy()
             elif which == 'old':
-                data.view_settings = data.old_view_settings.copy()
+                current_item.data.view_settings = current_item.data.old_view_settings.copy()
             self.show_current_view_settings()
             if current_item.checkState():
-                data.apply_view_settings()
-                data.apply_colormap()
+                current_item.data.apply_view_settings()
+                current_item.data.apply_colormap()
                 self.canvas.draw()
 
     def open_item_menu(self):
-        if PRINT_FUNCTION_CALLS:
-            print('open_item_menu')
         current_item = self.file_list.currentItem()
         if current_item:
-            checked_items = [self.file_list.item(index) for index in range(self.file_list.count()) 
-                             if self.file_list.item(index).checkState() == 2]
+            checked_items = self.get_checked_items()
             menu = QtWidgets.QMenu(self)
             actions = ['Duplicate...','Check all...']
             if len(checked_items) > 1:
@@ -998,28 +809,10 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             menu.popup(QtGui.QCursor.pos())
             
     def do_item_action(self, signal):
-        if PRINT_FUNCTION_CALLS:
-            print('open_item_menu')
         current_item = self.file_list.currentItem()
         if current_item:
             if signal.text() == 'Duplicate...':
-                self.file_list.itemChanged.disconnect(self.file_checked)
-                current_data = current_item.data(QtCore.Qt.UserRole)
-                item = QtWidgets.QListWidgetItem()
-                item.setData(QtCore.Qt.UserRole, Data(current_data.filepath, self.canvas))
-                item.data(QtCore.Qt.UserRole).settings = current_data.settings.copy()
-                item.data(QtCore.Qt.UserRole).view_settings = current_data.view_settings.copy()
-                item.data(QtCore.Qt.UserRole).filters = copy.deepcopy(current_data.filters)
-                item.data(QtCore.Qt.UserRole).duplicate = True
-                item.setText(current_item.text())
-                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-                item.setCheckState(QtCore.Qt.Checked)
-                self.file_list.addItem(item)
-                if item.data(QtCore.Qt.UserRole).meta_data:
-                    item.setText(item.data(QtCore.Qt.UserRole).meta_data_name)                
-                self.file_list.itemChanged.connect(self.file_checked)
-                self.update_plots()
-                self.file_list.setCurrentItem(item)
+                self.duplicate_item()
             elif signal.text() == 'Check all...':
                 self.file_list.itemChanged.disconnect(self.file_checked)
                 for item_index in range(self.file_list.count()):                        
@@ -1029,257 +822,215 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             elif signal.text() == 'Combine plots...':
                 try:
                     self.combine_plots()
-                except:
-                    print('Cannot combine these plots...')
+                except Exception as e:
+                    print('Cannot combine these plots...', e)
+                    
+    def duplicate_item(self):
+        original_item = self.file_list.currentItem()
+        if original_item:
+            self.open_files(filepaths=[original_item.data.filepath])
+            new_item = self.file_list.currentItem()
+            new_item.setText(f'[DUPLICATE] {new_item.data.label}')
+            new_item.duplicate = True
+            new_item.data.settings = original_item.data.settings.copy()
+            new_item.data.view_settings = original_item.data.view_settings.copy()
+            new_item.data.filters = copy.deepcopy(original_item.data.filters)              
+            self.update_plots()
                 
     def combine_plots(self):
-        items = self.file_list
-        checked_items = [items.item(index) for index in range(items.count()) 
-                            if items.item(index).checkState() == 2]
+        checked_items = self.get_checked_items()
         if checked_items:
-            title = '[combined] '
             data_list = []
             for item in checked_items:
-                split_text = item.text().split(' ')
-                title += '{} {} '.format(split_text[0],split_text[1])
-                data_list.append(item.data(QtCore.Qt.UserRole))
-            self.multi_plot_window = LineCutWindow(parent=data_list, multiple=True)
-            self.multi_plot_window.title = title
-            self.multi_plot_window.xlabel = data_list[0].settings['xlabel']
-            self.multi_plot_window.ylabel = data_list[0].settings['ylabel']
-            self.multi_plot_window.zlabel = None
-            self.multi_plot_window.draw_plots()
+                data_list.append(item.data)
+            self.multi_plot_window = MultiPlotWindow(data_list)
+            self.multi_plot_window.draw_plot()
             self.multi_plot_window.show()
     
     def open_plot_settings_menu(self):
-        if PRINT_FUNCTION_CALLS:
-            print('open_plot_settings_menu')
-        table = self.settings_table
-        row = table.currentRow()
-        column = table.currentColumn()
+        row = self.settings_table.currentRow()
+        column = self.settings_table.currentColumn()
         if column == 1:
-            setting_name = table.item(row, 0).text()
+            setting_name = self.settings_table.item(row, 0).text()
             menu = QtWidgets.QMenu(self)
-            if setting_name in self.settings_menu_list.keys():
-                for entry in self.settings_menu_list[setting_name]:
+            settings = SETTINGS_MENU_OPTIONS.copy()
+            current_item = self.file_list.currentItem()
+            if current_item and hasattr(current_item.data, 'settings_menu_options'):
+                settings.update(current_item.data.settings_menu_options)
+            if setting_name in settings.keys():
+                for entry in settings[setting_name]:
                     action = QtWidgets.QAction(entry, self)
                     menu.addAction(action)
                 menu.triggered[QtWidgets.QAction].connect(self.replace_plot_setting)
                 menu.popup(QtGui.QCursor.pos())
    
     def replace_plot_setting(self, signal):
-        if PRINT_FUNCTION_CALLS:
-            print('replaceSetting')
-        table = self.settings_table
-        item = table.currentItem()
+        item = self.settings_table.currentItem()
         item.setText(signal.text())
 
     def reset_color_limits(self):
-        if PRINT_FUNCTION_CALLS:
-            print('reset_color_limits')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
-            data.reset_view_settings(overrule=True)
+            current_item.data.reset_view_settings(overrule=True)
             self.show_current_view_settings()
             if current_item.checkState():
-                data.apply_view_settings()
+                current_item.data.apply_view_settings()
                 self.canvas.draw()
     
     def filters_box_changed(self):
-        if PRINT_FUNCTION_CALLS:
-            print('filters_box_changed')
         current_item = self.file_list.currentItem()
-        box = self.filters_combobox
         if current_item:
-            filter_name = box.currentText()
-            new_filter = copy.deepcopy(self.default_filter_settings[filter_name])
-            data = current_item.data(QtCore.Qt.UserRole)
-            data.apply_filter(new_filter, update_color_limits=False)
-            data.reset_view_settings()
-            self.append_filter_to_table()
-            self.show_current_view_settings()
-            if current_item.checkState():
+            filt = Filter(self.filters_combobox.currentText())
+            current_item.data.filters.append(filt)
+            if current_item.checkState() and filt.checkstate:
                 self.update_plots()
-        box.currentIndexChanged.disconnect(self.filters_box_changed)
-        box.setCurrentIndex(0)
-        box.clearFocus()
-        box.currentIndexChanged.connect(self.filters_box_changed)
+            else:
+                self.append_filter_to_table()
+        self.filters_combobox.currentIndexChanged.disconnect(self.filters_box_changed)
+        self.filters_combobox.setCurrentIndex(0)
+        self.filters_combobox.clearFocus()
+        self.filters_combobox.currentIndexChanged.connect(self.filters_box_changed)
+        
     
     def append_filter_to_table(self):
-        if PRINT_FUNCTION_CALLS:
-            print('append_filter_to_table')
         current_item = self.file_list.currentItem()
         if current_item:
-            table = self.filters_table
-            row = table.rowCount()
-            settings = current_item.data(QtCore.Qt.UserRole).filters[row]           
-            table.itemChanged.disconnect(self.filters_table_edited)
-            table.insertRow(row)           
-            type_item = QtWidgets.QTableWidgetItem(settings['Name'])
-            type_item.setFlags(QtCore.Qt.ItemIsSelectable | 
-                    QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
-            if settings['Checked']:
-                type_item.setCheckState(QtCore.Qt.Checked)
-            else:
-                type_item.setCheckState(QtCore.Qt.Unchecked)
-            method_list = filters.get_list(settings['Name'])
-            property_box = NoScrollQComboBox()
-            property_box.setFocusPolicy(QtCore.Qt.StrongFocus)
-            property_box.addItems(method_list)
-            property_index = [i for i, method in enumerate(method_list) if method_list[i] == settings['Method']]
-            if property_index != []:
-                property_box.setCurrentIndex(property_index[0])
-            setting_item_1 = QtWidgets.QTableWidgetItem(str(settings['Setting 1']))
-            setting_item_2 = QtWidgets.QTableWidgetItem(str(settings['Setting 2']))
-            property_box.currentIndexChanged.connect(lambda: self.filters_table_edited(setting_item_1))
-            table.setItem(row, 0, type_item)
-            table.setCellWidget(row, 1, property_box)
-            table.setItem(row, 2, setting_item_1)
-            table.setItem(row, 3, setting_item_2)
-            table.item(row, 2).setTextAlignment(int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter))
-            table.item(row, 3).setTextAlignment(int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter))
-            table.setCurrentCell(row, 0)
-            table.itemChanged.connect(self.filters_table_edited)
+            row = self.filters_table.rowCount()
+            filt = current_item.data.filters[row]
+            self.filters_table.itemChanged.disconnect(self.filters_table_edited)
+            self.filters_table.insertRow(row) 
+            filter_item = QtWidgets.QTableWidgetItem(filt.name)
+            filter_item.setFlags(QtCore.Qt.ItemIsSelectable | 
+                                 QtCore.Qt.ItemIsEnabled | 
+                                 QtCore.Qt.ItemIsUserCheckable)
+            filter_item.setText(filt.name)
+            filter_item.setCheckState(filt.checkstate)
+            method_box = NoScrollQComboBox()
+            method_box.addItems(filt.method_list)
+            method_box.setCurrentIndex(filt.method_list.index(filt.method))
+            setting_1 = QtWidgets.QTableWidgetItem(filt.settings[0])
+            setting_2 = QtWidgets.QTableWidgetItem(filt.settings[1])
+            method_box.currentIndexChanged.connect(lambda: self.filters_table_edited(setting_1))
+            self.filters_table.setItem(row, 0, filter_item)
+            self.filters_table.setCellWidget(row, 1, method_box)
+            self.filters_table.setItem(row, 2, setting_1)
+            self.filters_table.setItem(row, 3, setting_2)
+            self.filters_table.item(row, 2).setTextAlignment(int(QtCore.Qt.AlignRight) | 
+                                                             int(QtCore.Qt.AlignVCenter))
+            self.filters_table.item(row, 3).setTextAlignment(int(QtCore.Qt.AlignRight) | 
+                                                             int(QtCore.Qt.AlignVCenter))
+            self.filters_table.setCurrentCell(row, 0)
+            self.filters_table.itemChanged.connect(self.filters_table_edited)
     
     def remove_filters(self, which='current'):
-        if PRINT_FUNCTION_CALLS:
-            print('remove_filters')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
-            table = self.filters_table
             if which == 'current':
-                filter_row = table.currentRow()
+                filter_row = self.filters_table.currentRow()
                 if filter_row != -1:
-                    table.removeRow(filter_row)
-                    del data.filters[filter_row]
-                    data.apply_all_filters(update_color_limits=False)
-                    data.reset_view_settings()
+                    self.filters_table.removeRow(filter_row)
+                    del current_item.data.filters[filter_row]
+                    current_item.data.apply_all_filters()
+                    current_item.data.reset_view_settings()
             elif which == 'all':
-                table.setRowCount(0)
-                data.filters = []
-                data.apply_all_filters(update_color_limits=False)
-                data.reset_view_settings()
+                self.filters_table.setRowCount(0)
+                current_item.data.filters = []
+                current_item.data.apply_all_filters()
+                current_item.data.reset_view_settings()
             if current_item.checkState():
-                data.apply_view_settings()
+                current_item.data.apply_view_settings()
                 self.update_plots()
                 self.show_current_view_settings()
      
-    def move_filter(self, to=1):
-        if PRINT_FUNCTION_CALLS:
-            print('move_filter')
+    def move_filter(self, to):
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
-            filters = data.filters
-            table = self.filters_table
-            row = table.currentRow()
-            if (((row > 0) & (to == -1)) | ((row < table.rowCount()-1) & (to == 1))):
+            filters = current_item.data.filters
+            row = self.filters_table.currentRow()
+            if ((row > 0 and to == -1) or
+                (row < self.filters_table.rowCount()-1 and to == 1)):
                 filters[row], filters[row+to] = filters[row+to], filters[row]
                 self.show_current_filters()
-                table.setCurrentCell(row+to, 0)
-                if ((table.item(row,0).checkState()) & (table.item(row+to,0).checkState())):
-                    data.apply_all_filters()
+                self.filters_table.setCurrentCell(row+to, 0)
+                if (self.filters_table.item(row,0).checkState() and 
+                    self.filters_table.item(row+to,0).checkState()):
+                    current_item.data.apply_all_filters()
                     self.update_plots()
                     self.show_current_view_settings()
 
     def save_image(self):
-        if PRINT_FUNCTION_CALLS:
-            print('save_as')
         current_item = self.file_list.currentItem()
         if current_item:
-            data = current_item.data(QtCore.Qt.UserRole)
-            data_name, _ = os.path.splitext(data.filepath)
+            data_name, _ = os.path.splitext(current_item.data.filepath)
             formats = 'Adobe Acrobat (*.pdf);;Portable Network Graphic (*.png)'
             filename, extension = QtWidgets.QFileDialog.getSaveFileName(
                     self, 'Save Figure As...', data_name.replace(':',''), formats)
             if filename:
-                print('Save Figure as '+filename+' ...')
-                try:
-                    dpi = int(data.settings['dpi'])
-                except:
+                print('Save Figure as ', filename)                    
+                if current_item.data.settings['dpi'] == 'figure':
                     dpi = 'figure'
-                    
-                if DARK_THEME and qdarkstyle_imported:                
-                    rcParams['text.color'] = 'black'
-                    rcParams['xtick.color'] = 'black'
-                    rcParams['ytick.color'] = 'black'
-                    rcParams['axes.facecolor'] = 'white'
-                    rcParams['axes.edgecolor'] = 'black'
-                    rcParams['axes.labelcolor'] = 'black'
-                    self.update_plots()
-                self.figure.savefig(filename, dpi=dpi,
-                                    transparent=data.settings['transparent']=='True',
+                else:
+                    dpi = current_item.data.settings['dpi'] 
+                if DARK_THEME and qdarkstyle_imported:             
+                    rcParams_to_light_theme()
+                    self.update_plots(update_data=False)
+                transparent = current_item.data.settings['transparent']=='True'
+                self.figure.savefig(filename, dpi=dpi, transparent=transparent,
                                     bbox_inches='tight')
                 if DARK_THEME and qdarkstyle_imported:
-                    rcParams['axes.facecolor'] = DARK_COLOR
-                    rcParams['axes.edgecolor'] = GREY_COLOR
-                    rcParams['text.color'] = LIGHT_COLOR
-                    rcParams['xtick.color'] = LIGHT_COLOR
-                    rcParams['ytick.color'] = LIGHT_COLOR
-                    rcParams['axes.labelcolor'] = LIGHT_COLOR
-                    self.update_plots()
+                    rcParams_to_dark_theme()
+                    self.update_plots(update_data=False)
                 print('Saved!')   
            
     def save_filters(self):
-        if PRINT_FUNCTION_CALLS:
-            print('save_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             filename, _ = QtWidgets.QFileDialog.getSaveFileName(
                     self, 'Save Filters As...', '', '.npy')
-            np.save(filename, current_item.data(QtCore.Qt.UserRole).filters)
+            np.save(filename, current_item.data.filters)
             
     def load_filters(self):
-        if PRINT_FUNCTION_CALLS:
-            print('load_filters')
         current_item = self.file_list.currentItem()
         if current_item:
             filename, _ = QtWidgets.QFileDialog.getOpenFileNames(
                     self, 'Open Filters File...', '', '*.npy')
             loaded_filters = np.load(filename[0], allow_pickle=True)
-            data = current_item.data(QtCore.Qt.UserRole)
-            data.filters = copy.deepcopy(loaded_filters)
+            current_item.data.filters = copy.deepcopy(loaded_filters)
             self.show_current_filters()
-            data.apply_all_filters()
+            current_item.data.apply_all_filters()
             self.update_plots()
             self.show_current_view_settings()
     
     def save_session(self, which='current'):
-        if PRINT_FUNCTION_CALLS:
-            print('save_session')
         current_item = self.file_list.currentItem()
         if current_item:
             if which == 'current':
-                data = current_item.data(QtCore.Qt.UserRole)
-                filename, _ = QtWidgets.QFileDialog.getSaveFileName(
-                    self, 'Save Session As...', os.path.splitext(data.filepath)[0].replace(':',''), '*.npy')
+                suggested_filename = os.path.splitext(current_item.data.filepath)[0].replace(':','')
+                filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
+                    self, 'Save Session As...', suggested_filename, '*.npy')
                 items = [current_item]
             elif which == 'all':
-                filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
                     self, 'Save Session As...', '', '*.npy')
                 items = [self.file_list.item(n) for n in range(self.file_list.count())]
             elif which == 'checked':
-                filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
                     self, 'Save Session As...', '', '*.npy')
                 items = [self.file_list.item(n) for n in range(self.file_list.count()) 
                          if self.file_list.item(n).checkState() == 2]                             
             dictionary_list = []
             for item in items:
-                data = item.data(QtCore.Qt.UserRole)
-                item_dictionary = {'File Name': data.filename, 'File Path': data.filepath,
-                                   'Settings': data.settings, 'Filters': data.filters, 
-                                   'View Settings': data.view_settings, 'Raw Data': data.raw_data}
-                if data.meta_data:
-                    item_dictionary['Meta'] = data.meta_data
+                item_dictionary = {'Label': item.data.label, 
+                                   'File Path': filepath,
+                                   'Settings': item.data.settings, 
+                                   'Filters': item.data.filters, 
+                                   'View Settings': item.data.view_settings, 
+                                   'Raw Data': item.data.raw_data}
                 dictionary_list.append(item_dictionary)
-            np.save(filename, dictionary_list)
+            np.save(filepath, dictionary_list)
             print('Saved!')
     
-    def open_files_from_folder(self):			
-        if PRINT_FUNCTION_CALLS:
-            print('open_files_from_folder')   
+    def open_files_from_folder(self): 			
         self.file_list.itemChanged.disconnect(self.file_checked)
         rootdir = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
         filepaths = []
@@ -1290,22 +1041,13 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     filepath = os.path.join(subdir, file)
                     filepaths.append((os.stat(filepath)[ST_CTIME],filepath))
         filepaths.sort(key=lambda tup: tup[0])
-        for creation_time, filepath in filepaths:
-            print('Open', filepath)
-            self.add_file(filepath)
-        last_item = self.file_list.item(self.file_list.count()-1)
-        self.file_list.setCurrentItem(last_item)
-        for item_index in range(self.file_list.count()-1):
-            self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-        self.show_current_all()
-        self.file_list.itemChanged.connect(self.file_checked)
-        last_item.setCheckState(QtCore.Qt.Checked)
+        self.open_files(filepaths)
         
     def update_link_to_folder(self, new_folder=True):
         if new_folder:
             self.linked_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
         if self.linked_folder:
-            self.window_title = 'Inspectra Gadget - Linked to folder '+self.linked_folder
+            self.window_title = f'Inspectra Gadget - Linked to folder {self.linked_folder}'
             self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
             new_files = []
             for subdir, dirs, files in os.walk(self.linked_folder):
@@ -1317,174 +1059,80 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                             new_files.append((os.stat(filepath)[ST_CTIME],filepath))
             if new_files:
                 new_files.sort(key=lambda tup: tup[0])
-                for new_file in new_files:
-                    try:
-                        print('Open', new_file[1])
-                        self.add_file(new_file[1], do_load_data=False)
-                        self.linked_files.append(new_file[1])
-                    except:
-                        print('Could not open', new_file[1])
-                        #raise
-                        continue
-                if new_folder:
-                    last_item = self.file_list.item(self.file_list.count()-1)
-                    self.file_list.setCurrentItem(last_item)
-                    last_item.setCheckState(QtCore.Qt.Checked)
+                new_filepaths = [new_file[1] for new_file in new_files]
+                self.open_files(new_filepaths)
+                for new_filepath in new_filepaths:
+                    self.linked_files.append(new_filepath)               
                     
     def unlink_folder(self):
         if self.linked_folder:
             self.linked_folder = None
             self.window_title = 'Inspectra Gadget'
-            self.setWindowTitle(self.window_title+self.window_title_auto_refresh)
-    
-    def save_files_as(self, extension):
-        if PRINT_FUNCTION_CALLS:
-            print('save_files_as')
-        save_directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
-        items = [self.file_list.item(n) for n in range(self.file_list.count())]
-        for item in items:
-            filename = os.path.join(save_directory, item.text().replace(':','') + extension)
-            if not os.path.isfile(filename):
-                try:            
-                    self.file_list.itemChanged.disconnect(self.file_checked)
-                    for item_index in range(self.file_list.count()):
-                        self.file_list.item(item_index).setCheckState(QtCore.Qt.Unchecked)
-                    item.setCheckState(QtCore.Qt.Checked)
-                    self.file_list.itemChanged.connect(self.file_checked)
-                    self.update_plots()
-                    data = item.data(QtCore.Qt.UserRole)
-                    print('Saving figure as '+filename)
-                    try:
-                        dpi = int(data.settings['dpi'])
-                    except:
-                        dpi = 'figure'
-                    self.figure.savefig(filename, dpi=dpi, 
-                                        transparent=data.settings['transparent']=='True', bbox_inches='tight')
-                except:
-                    print('Could not save file '+filename+'...')
+            self.setWindowTitle(self.window_title+
+                                self.window_title_auto_refresh)
         
     def mouse_click_canvas(self, event):
-        if PRINT_FUNCTION_CALLS:
-            print('mouse_click_canvas')
-        if self.navi_toolbar.mode == '':
+        if self.navi_toolbar.mode == '': # If not using the navigation toolbar tools
             if event.inaxes:
                 x, y = event.xdata, event.ydata
-                items = self.file_list
-                self.plot_in_focus = [items.item(index) for index in range(items.count()) 
-                        if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
+                checked_items = self.get_checked_items()
+                self.plot_in_focus = [checked_item for checked_item in checked_items 
+                                      if checked_item.data.axes == event.inaxes]
                 if self.plot_in_focus:
-                    plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
-                    plot_data.selected_x, plot_data.selected_y = x, y
-                    data = plot_data.processed_data
+                    data = self.plot_in_focus[0].data
+                    data.selected_x, data.selected_y = x, y
                     
-                    if (event.button == 1 or event.button == 2) and len(plot_data.columns) == 3 and not plot_data.list_points:
-                        index_x = np.argmin(np.abs(data[0][:,0]-x))
-                        index_y = np.argmin(np.abs(data[1][0,:]-y))
-                        plot_data.selected_indices = [int(index_x), int(index_y)]
+                    if ((event.button == 1 or event.button == 2) and 
+                        len(data.get_columns()) == 3 and 
+                        not hasattr(data, 'linecut_points')):
+                        index_x = np.argmin(np.abs(data.processed_data[0][:,0]-x))
+                        index_y = np.argmin(np.abs(data.processed_data[1][0,:]-y))
+                        data.selected_indices = [int(index_x), int(index_y)]
+                        if not hasattr(data, 'linecut_window'):
+                            data.linecut_window = LineCutWindow(data)
                         if event.button == 1:
-                            if PRINT_FUNCTION_CALLS:
-                                print('leftmouseclickplot')
-                            plot_data.orientation = 'horizontal'
-                        else:
-                            if PRINT_FUNCTION_CALLS:
-                                print('middlemouseclickplot')
-                            plot_data.orientation = 'vertical'
-                        try:
-                            plot_data.linecut_window
-                        except AttributeError:
-                            plot_data.linecut_window = LineCutWindow(plot_data)
-                        plot_data.linecut_window.running = True
-                        plot_data.update_linecut()
+                            data.linecut_window.orientation = 'horizontal'
+                        elif event.button == 2:
+                            data.linecut_window.orientation = 'vertical'
+                        data.linecut_window.running = True
+                        data.linecut_window.update()
                         self.canvas.draw()
-                        plot_data.linecut_window.activateWindow()
+                        data.linecut_window.activateWindow()
                         
                     elif event.button == 3:
-                        if PRINT_FUNCTION_CALLS:
-                            print('rightmouseclickplot')
-                        menu = QtWidgets.QMenu(self)
-                        if len(plot_data.columns) == 3:
-                            index_x = np.argmin(np.abs(data[0][:,0]-x))
-                            index_y = np.argmin(np.abs(data[1][0,:]-y))
-                            z_value = data[2][index_x,index_y]
-                            coordinates = 'x = %.4g, y = %.4g, z = %.4g (%d, %d)' % (x, y, z_value, index_x, index_y)
+                        rightclick_menu = QtWidgets.QMenu(self)
+                        if len(data.get_columns()) == 3:
+                            index_x = np.argmin(np.abs(data.processed_data[0][:,0]-x))
+                            index_y = np.argmin(np.abs(data.processed_data[1][0,:]-y))
+                            z = data.processed_data[2][index_x,index_y]
+                            coordinates = (f'x = {x:.4g}, y = {y:.4g}, z = {z:.4g}'
+                                           f' ({index_x}, {index_y})')
                             action = QtWidgets.QAction(coordinates, self)
                             action.setEnabled(False)
-                            menu.addAction(action)
-                            menu.addSeparator()
-                        if plot_data.channels: # Triton 6 data format (meta.json file included)
-                            channel_menu = menu.addMenu('Change channel to...')
-                            for channel in plot_data.channels[len(plot_data.columns)-1:]:
-                                action = QtWidgets.QAction(channel, self)
-                                channel_menu.addAction(action)
-                        if plot_data.dependent_parameters: # QCoDeS database format
-                            channel_menu = menu.addMenu('Select channel...')
-                            for par in plot_data.dependent_parameters:
-                                action = QtWidgets.QAction(par, self)
-                                channel_menu.addAction(action)
-                        try:
-                            plot_data.settings['rc-filter']
-                        except KeyError:
-                            pass
-                        else:
-                            if plot_data.settings['rc-filter'] != '' and plot_data.channels: # Triton 6 data format (meta.json file included)
-                                if plot_data.rcfilter_correct == True:
-                                    action = QtWidgets.QAction('Disable RC-filter correction...', self)                            
-                                else:
-                                    action = QtWidgets.QAction('Enable RC-filter correction...', self)
-                                menu.addAction(action)
-                        if len(plot_data.columns) == 3:
-                            if plot_data.measurement_bounds:
-                                if plot_data.draw_full_range:
-                                    action = QtWidgets.QAction('Show measured range...', self)
-                                else:
-                                    action = QtWidgets.QAction('Show full range...', self)                                 
-                                menu.addAction(action)
-                                menu.addSeparator()
-                            action = QtWidgets.QAction('Hide linecuts...', self)
-                            menu.addAction(action)
-                            action = QtWidgets.QAction('Refresh plot...', self)
-                            menu.addAction(action)
-                            if plot_data.cropping:
-                                action = QtWidgets.QAction('Crop x to...', self)
-                                menu.addAction(action)
-                                action = QtWidgets.QAction('Crop y to...', self)
-                                menu.addAction(action)
-                                action = QtWidgets.QAction('Crop x and y to...', self)
-                                plot_data.crop_to = [x, y]
-                            else:
-                                action = QtWidgets.QAction('Crop from...', self)
-                                plot_data.crop_from = [x, y]
-                                plot_data.cropping = False
-                            menu.addAction(action)
-                            if plot_data.drawing_diagonal_linecut:
-                                action = QtWidgets.QAction('Diagonal linecut to...', self)
-                                plot_data.linecut_index_to = [int(index_x), int(index_y)]
-                                plot_data.linecut_to = [x, y]
-                            else:
-                                action = QtWidgets.QAction('Diagonal linecut from...', self)
-                                plot_data.linecut_index_from = [int(index_x), int(index_y)]
-                                plot_data.linecut_from = [x, y]
-                            menu.addAction(action)
-                            entries = ['Draw circular linecut...',
-                                       'Plot vertical linecuts...',
-                                       'Plot horizontal linecuts...',
-                                       'FFT vertical...',
-                                       'FFT horizontal...']
-                        elif len(plot_data.columns) == 2:
-                            entries = ['Refresh plot...']
-                        for entry in entries:
-                            action = QtWidgets.QAction(entry, self)
-                            menu.addAction(action)
-                        menu.triggered[QtWidgets.QAction].connect(self.popup_canvas)
-                        menu.popup(QtGui.QCursor.pos())
+                            rightclick_menu.addAction(action)
+                            rightclick_menu.addSeparator()
+                            
+                        # Add actions from extension modules
+                        data.add_extension_actions(self, rightclick_menu)
+                        actions = []
+                        if len(data.get_columns()) == 3:
+                            actions.append(QtWidgets.QAction('Draw diagonal linecut...', self))
+                            #data.linecut_from = [x, y]
+                            actions.append(QtWidgets.QAction('Draw circular linecut...', self))
+                            actions.append(QtWidgets.QAction('Plot vertical linecuts...', self))
+                            actions.append(QtWidgets.QAction('Plot horizontal linecuts...', self))
+                            actions.append(QtWidgets.QAction('FFT vertical...', self))
+                            actions.append(QtWidgets.QAction('FFT horizontal...', self))
+                        for action in actions:
+                            rightclick_menu.addAction(action)
+                        rightclick_menu.triggered[QtWidgets.QAction].connect(self.popup_canvas)
+                        rightclick_menu.popup(QtGui.QCursor.pos())
                 
                 else: # if colorbar in focus
-                    checked_items = [items.item(index) for index in range(items.count()) 
-                                    if items.item(index).checkState() == 2]
                     self.cbar_in_focus = [checked_item for checked_item in checked_items
-                                        if checked_item.data(QtCore.Qt.UserRole).cbar.ax == event.inaxes]
+                                          if checked_item.data.cbar.ax == event.inaxes]
                     if self.cbar_in_focus:
-                        data = self.cbar_in_focus[0].data(QtCore.Qt.UserRole)
+                        data = self.cbar_in_focus[0].data
                         if event.button == 1:
                             data.view_settings['Minimum'] = y
                             data.reset_midpoint()
@@ -1498,218 +1146,125 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         self.show_current_view_settings()
     
     def popup_canvas(self, signal):
-        if PRINT_FUNCTION_CALLS:
-            print(signal.text())
-        plot_data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
-        if signal.text() == 'Hide linecuts...':
-            self.hide_linecuts(plot_data)
-        elif signal.text() == 'Refresh plot...':
-            plot_data.refresh_data(update_color_limits=False, refresh_unit_conversion=False)
-            self.update_plots()
-        elif (signal.text() == 'Plot horizontal linecuts...' or
+        data = self.plot_in_focus[0].data
+        if (signal.text() == 'Plot horizontal linecuts...' or
             signal.text() == 'Plot vertical linecuts...'):
+            data.multi_linecuts_window = MultipleLineCutsWindow(data) 
             if signal.text() == 'Plot horizontal linecuts...':
-                plot_data.multi_orientation = 'horizontal'
+                data.multi_linecuts_window.orientation = 'horizontal'
             elif signal.text() == 'Plot vertical linecuts...':
-                plot_data.multi_orientation = 'vertical'
-            plot_data.multi_linecuts_window = LineCutWindow(plot_data, multiple=True)            
-            plot_data.update_multiple_linecuts()
-        elif signal.text() == 'Enable RC-filter correction...':
-            plot_data.rcfilter_correct = True
-            plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
-            self.update_plots()
-        elif signal.text() == 'Disable RC-filter correction...':
-            plot_data.rcfilter_correct = False
-            plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=False)
-            self.update_plots()
-        elif signal.text() == 'Crop from...':
-            plot_data.cropping = True
-        elif (signal.text() == 'Crop x and y to...' or
-              signal.text() == 'Crop x to...' or
-              signal.text() == 'Crop y to...'):
-            new_filters = []
-            x1, y1 = plot_data.crop_from
-            x2, y2 = plot_data.crop_to
-            if (signal.text() == 'Crop x and y to...' or
-                signal.text() == 'Crop x to...'):
-                if x1 > x2:
-                    x1, x2 = x2, x1
-                new_filters.append({'Name': 'Crop X', 'Method': 'Absolute',
-                                   'Setting 1': '%.4g' % x1, 
-                                   'Setting 2': '%.4g' % x2, 'Checked': 2})
-            if (signal.text() == 'Crop x and y to...' or
-                signal.text() == 'Crop y to...'):                    
-                if y1 > y2:
-                    y1, y2 = y2, y1
-                new_filters.append({'Name': 'Crop Y', 'Method': 'Absolute',
-                                   'Setting 1': '%.4g' % y1, 
-                                   'Setting 2': '%.4g' % y2, 'Checked': 2})
-            for new_filter in new_filters:
-                plot_data.apply_filter(new_filter)
-                self.append_filter_to_table()
-            self.show_current_view_settings()
-            self.update_plots()
+                data.multi_linecuts_window.orientation = 'vertical'
+            data.multi_linecuts_window.update()
+        elif signal.text() == 'Draw diagonal linecut...':
+            if hasattr(data, 'linecut_points'):
+                data.hide_linecuts()
+            x, y = data.selected_x, data.selected_y
+            data.linecut_points = [DraggablePoint(data, x, y)]            
+            left, right = data.axes.get_xlim() 
+            bottom, top = data.axes.get_ylim()
+            x_mid, y_mid = 0.5*(left+right), 0.5*(top+bottom)
+            data.linecut_points.append(DraggablePoint(data, x_mid, y_mid, 
+                                                      draw_line=True))
+            if not hasattr(data, 'linecut_window'):
+                data.linecut_window = LineCutWindow(data)
+            data.linecut_window.orientation = 'diagonal'
+            data.linecut_window.running = True
+            data.linecut_window.update()
             self.canvas.draw()
-            plot_data.cropping = False
-        elif signal.text() == 'Diagonal linecut from...':
-            if plot_data.list_points:
-                self.hide_linecuts(plot_data)
-            x1, y1 = plot_data.linecut_from
-            plot_data.drawing_diagonal_linecut = True
-            plot_data.list_points.append(DraggablePoint(plot_data, x1, y1))
-            self.canvas.draw()
-        elif signal.text() == 'Diagonal linecut to...':
-            x1, y1 = plot_data.linecut_to
-            plot_data.list_points.append(DraggablePoint(plot_data, x1, y1))
-            plot_data.orientation = 'diagonal'
-            try:
-                plot_data.linecut_window
-            except AttributeError:
-                plot_data.linecut_window = LineCutWindow(plot_data)
-            plot_data.linecut_window.running = True
-            plot_data.update_linecut()
-            self.canvas.draw()
-            plot_data.drawing_diagonal_linecut = False
-            plot_data.linecut_window.activateWindow()
+            data.linecut_window.activateWindow()
         elif signal.text() == 'Draw circular linecut...':
-            if plot_data.list_points:
-                self.hide_linecuts(plot_data)
-            left, right = plot_data.axes.get_xlim() 
-            bottom, top = plot_data.axes.get_ylim()                
-            x0, y0 = plot_data.selected_x, plot_data.selected_y
-            plot_data.xr, plot_data.yr = 0.1*(right-left), 0.1*(top-bottom)
-            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0, draw_line=False, draw_circle=True))
-            plot_data.list_points.append(DraggablePoint(plot_data, x0+plot_data.xr, y0, draw_line=False, draw_circle=True))
-            plot_data.list_points.append(DraggablePoint(plot_data, x0, y0+plot_data.yr, draw_line=False, draw_circle=True))
-            plot_data.orientation = 'circular'
-            try:
-                plot_data.linecut_window
-            except AttributeError:
-                plot_data.linecut_window = LineCutWindow(plot_data)
-            plot_data.linecut_window.running = True
-            plot_data.update_linecut()
+            if hasattr(data, 'linecut_points'):
+                data.hide_linecuts()
+            left, right = data.axes.get_xlim() 
+            bottom, top = data.axes.get_ylim()                
+            x, y = data.selected_x, data.selected_y
+            data.xr, data.yr = 0.1*(right-left), 0.1*(top-bottom)
+            data.linecut_points = [DraggablePoint(data, x, y),
+                                   DraggablePoint(data, x+data.xr, y)]
+            data.linecut_points.append(DraggablePoint(data, x, y+data.yr,
+                                                      draw_circle=True))
+            if not hasattr(data, 'linecut_window'):
+                data.linecut_window = LineCutWindow(data)
+            data.linecut_window.running = True
+            data.linecut_window.orientation = 'circular'
+            data.linecut_window.update()
             self.canvas.draw()
-            plot_data.linecut_window.activateWindow()  
-        elif signal.text() == 'Show full range...':
-            plot_data.draw_full_range = True
-            plot_data.axes.set_xlim(left=min(plot_data.measurement_bounds), 
-                                    right=max(plot_data.measurement_bounds))
-            self.canvas.draw()
-        elif signal.text() == 'Show measured range...':
-            plot_data.draw_full_range = False
-            plot_data.axes.set_xlim(left=np.amin(plot_data.processed_data[0]), 
-                                    right=np.amax(plot_data.processed_data[0]))
-            self.canvas.draw()
+            data.linecut_window.activateWindow()
         elif signal.text() == 'FFT vertical...':
-            plot_data.fft_orientation = 'vertical'
-            plot_data.open_fft_window()
+            data.fft_orientation = 'vertical'
+            data.open_fft_window()
         elif signal.text() == 'FFT horizontal...':
-            plot_data.fft_orientation = 'horizontal'
-            plot_data.open_fft_window()
-        elif signal.text() in plot_data.channels:
-            channel_index = plot_data.channels.index(signal.text())
-            plot_data.settings['columns'] = plot_data.settings['columns'][:-1]+str(channel_index)
-            plot_data.columns[-1] = channel_index
-            if len(plot_data.columns) == 2:
-                plot_data.settings['ylabel'] = signal.text()
-            else:                
-                plot_data.settings['clabel'] = signal.text()
-            plot_data.refresh_data(update_color_limits=True, refresh_unit_conversion=True)
-            self.update_plots()
-            self.show_current_all()
-        elif qcodes_imported and signal.text() in plot_data.dependent_parameters:
-            plot_data.index_dependent_parameter = plot_data.dependent_parameters.index(signal.text())
-            plot_data.refresh_data(update_color_limits=True)
-            self.update_plots()
-            self.show_current_all()
-      
-    def hide_linecuts(self, plot_data):
-        try:
-            plot_data.linecut_window.running = False
-        except AttributeError:
-            pass
-        for line in reversed(plot_data.axes.get_lines()):
-            line.remove()
-            del line
-        for patch in reversed(plot_data.axes.patches):
-            patch.remove()
-            del patch
-        plot_data.list_points = []
-        self.canvas.draw()
-        
+            data.fft_orientation = 'horizontal'
+            data.open_fft_window()
+        else:
+            data.do_extension_actions(self, signal)
+            
     def copy_canvas_to_clipboard(self):
-        file_list = self.file_list
-        checked_items = [file_list.item(index) for index in range(file_list.count()) 
-                        if file_list.item(index).checkState() == 2]
+        checked_items = self.get_checked_items()
         for item in checked_items:
-            plot_data = item.data(QtCore.Qt.UserRole)
-            plot_data.cursor.horizOn = False
-            plot_data.cursor.vertOn = False            
+            item.data.cursor.horizOn = False
+            item.data.cursor.vertOn = False            
         self.canvas.draw()
         if DARK_THEME and qdarkstyle_imported:
-            rcParams['text.color'] = 'black'
-            rcParams['xtick.color'] = 'black'
-            rcParams['ytick.color'] = 'black'
-            rcParams['axes.facecolor'] = 'white'
-            rcParams['axes.edgecolor'] = 'black'
-            rcParams['axes.labelcolor'] = 'black'
-            self.update_plots(reset_view_settings=False)
+            rcParams_to_light_theme()
+            self.update_plots(update_data=False)
         buf = io.BytesIO()
-        try:
-            dpi = int(plot_data.settings['dpi'])
-        except:
+        if item.data.settings['dpi'] == 'figure':
             dpi = 'figure'
+        else:
+            dpi = int(item.data.settings['dpi'])
         self.figure.savefig(buf, dpi=dpi, bbox_inches='tight')
         QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
         buf.close()
         for item in checked_items:
-            plot_data = item.data(QtCore.Qt.UserRole)
-            plot_data.cursor.horizOn = True
-            plot_data.cursor.vertOn = True                       
+            item.data.cursor.horizOn = True
+            item.data.cursor.vertOn = True                       
         self.canvas.draw()
         if DARK_THEME and qdarkstyle_imported:
-            rcParams['axes.facecolor'] = DARK_COLOR
-            rcParams['axes.edgecolor'] = GREY_COLOR
-            rcParams['text.color'] = LIGHT_COLOR
-            rcParams['xtick.color'] = LIGHT_COLOR
-            rcParams['ytick.color'] = LIGHT_COLOR
-            rcParams['axes.labelcolor'] = LIGHT_COLOR
-            self.update_plots(reset_view_settings=False)
+            rcParams_to_dark_theme()
+            self.update_plots(update_data=False)
+            
+    def save_processed_data(self):
+        current_item = self.file_list.currentItem()
+        if current_item:
+            suggested_filename = (current_item.data.label.replace(':','') +
+                                  '_processed')
+            filepath, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'Save Processed Data As...', suggested_filename, '*.npy')
+            if filepath:
+                #save_data = np.column_stack(tuple(data.flatten() for data in 
+                #                                  current_item.data.processed_data))
+                if len(current_item.data.get_columns()) == 2:
+                    np.save(filepath, np.column_stack(current_item.data.processed_data))
+                elif len(current_item.data.get_columns()) == 3:
+                    np.save(filepath, np.stack(current_item.data.processed_data, axis=2))
             
     def mouse_scroll_canvas(self, event):
-        if PRINT_FUNCTION_CALLS:
-            print('mouse_scroll_canvas')
         if event.inaxes:
             y = event.ydata
-            items = self.file_list
-            self.plot_in_focus = [items.item(index) for index in range(items.count()) 
-                                  if items.item(index).data(QtCore.Qt.UserRole).axes == event.inaxes]
+            checked_items = self.get_checked_items()
+            self.plot_in_focus = [checked_item for checked_item in checked_items 
+                                  if checked_item.data.axes == event.inaxes]
             if self.plot_in_focus:
-                data = self.plot_in_focus[0].data(QtCore.Qt.UserRole)
-                if len(data.columns) == 3:
-                    try:
-                        data.linecut_window
-                    except AttributeError:
-                        pass
-                    else:
+                data = self.plot_in_focus[0].data
+                if len(data.get_columns()) == 3:
+                    if hasattr(data, 'linecut_window'):
                         data_shape = data.processed_data[0].shape
-                        if data.orientation == 'horizontal':
+                        if data.linecut_window.orientation == 'horizontal':
                             new_index = data.selected_indices[1]+int(event.step)
                             if new_index >= 0 and new_index < data_shape[1]:
                                 data.selected_indices[1] = new_index
-                        elif data.orientation == 'vertical':
+                        elif data.linecut_window.orientation == 'vertical':
                             new_index = data.selected_indices[0]+int(event.step)
                             if new_index >= 0 and new_index < data_shape[0]:
                                 data.selected_indices[0] = new_index
-                        data.update_linecut()
+                        data.linecut_window.update()
                         self.canvas.draw()
             else:
-                checked_items = [items.item(index) for index in range(items.count()) 
-                        if items.item(index).checkState() == 2]
                 self.cbar_in_focus = [checked_item for checked_item in checked_items
-                                      if checked_item.data(QtCore.Qt.UserRole).cbar.ax == event.inaxes]
+                                      if checked_item.data.cbar.ax == event.inaxes]
                 if self.cbar_in_focus:
-                    data = self.cbar_in_focus[0].data(QtCore.Qt.UserRole)
+                    data = self.cbar_in_focus[0].data
                     min_map = data.view_settings['Minimum']
                     max_map = data.view_settings['Maximum']
                     range_map = max_map-min_map
@@ -1725,23 +1280,33 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     self.show_current_view_settings()
         else:
             width, height = self.canvas.get_width_height()
-            speed = 0.04
-            if event.x < 0.25*width:
-                self.figure.subplots_adjust(left=(1+speed*event.step)*self.figure.subplotpars.left)
-            elif event.x > 0.75*width:
-                self.figure.subplots_adjust(right=(1+speed*0.5*event.step)*self.figure.subplotpars.right)
-            elif event.y < 0.25*height or event.y > 0.75*height:
-                if event.y < 0.25*height:
-                    self.figure.subplots_adjust(bottom=(1+speed*event.step)*self.figure.subplotpars.bottom)
-                elif event.y > 0.75*height:
-                    self.figure.subplots_adjust(top=(1+speed*0.5*event.step)*self.figure.subplotpars.top)
+            speed = 0.03
+            lb, rb, tb, bb = 0.15*width, 0.85*width, 0.85*height, 0.15*height
+            if (event.x < lb and event.y > bb and event.y < tb):
+                if (event.step > 0 or 
+                    (event.step < 0 and self.figure.subplotpars.left > 0.07)):
+                    self.figure.subplots_adjust(left=(1+speed*event.step)*
+                                                self.figure.subplotpars.left)
+            elif (event.x > rb and event.y > bb and event.y < tb):
+                  if (event.step < 0 or 
+                      (event.step > 0 and self.figure.subplotpars.right < 0.97)):
+                      self.figure.subplots_adjust(right=(1+speed*0.5*event.step)*
+                                                  self.figure.subplotpars.right)
+            elif (event.y < bb and event.x > lb and event.x < rb):
+                  if (event.step > 0 or 
+                      (event.step < 0 and self.figure.subplotpars.bottom > 0.07)):
+                      self.figure.subplots_adjust(bottom=(1+speed*event.step)*
+                                                  self.figure.subplotpars.bottom)
+            elif (event.y > tb and event.x > lb and event.x < rb):
+                  if (event.step < 0 or 
+                      (event.step > 0 and self.figure.subplotpars.top < 0.94)):
+                      self.figure.subplots_adjust(top=(1+speed*0.5*event.step)*
+                                                  self.figure.subplotpars.top)
             else:
                 self.figure.subplots_adjust(wspace=(1+speed*event.step)*self.figure.subplotpars.wspace)
             self.canvas.draw()
             
-    def keyPressEvent(self, event):
-        if PRINT_FUNCTION_CALLS:
-            print('keyPressEvent', event.key(), event.modifiers())  
+    def keyPressEvent(self, event): 
         if event.key() == QtCore.Qt.Key_C and event.modifiers() == QtCore.Qt.ControlModifier:
             self.copy_canvas_to_clipboard()
         elif event.key() == QtCore.Qt.Key_T and event.modifiers() == QtCore.Qt.ControlModifier:
@@ -1751,891 +1316,312 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             else:
                 self.stop_auto_refresh()
                 print('Stop live tracking...')
-            
-               
-    def merge_files(self, raw_data=True):
-        if PRINT_FUNCTION_CALLS:
-            print('merge_files')
-        try:
-            file_list = self.file_list
-            checked_items = [file_list.item(index) for index in range(file_list.count()) 
-                            if file_list.item(index).checkState() == 2]
-            if len(checked_items) > 1:
-                filepaths = [item.data(QtCore.Qt.UserRole).filepath for item in checked_items]
-                time_stamps = [item.data(QtCore.Qt.UserRole).filename.split('_')[0] for item in checked_items]
-                device_name = checked_items[0].data(QtCore.Qt.UserRole).filename.split('_')[1]
-                measurement_name = checked_items[0].data(QtCore.Qt.UserRole).filename.split('_')[2]
-                output_name = '_'.join(time_stamps)+'_'+device_name+'_'+measurement_name+'_merged.dat'
-                output_dir = os.path.dirname(checked_items[0].data(QtCore.Qt.UserRole).filepath)
-                output_filepath = output_dir+'/'+output_name
-                if raw_data:
-                    with open(output_filepath,'w') as out_file:
-                        for filepath in filepaths:
-                            with open(filepath) as in_file:
-                                for line in in_file:
-                                    out_file.write(line)
-                else:
-                    data = [item.data(QtCore.Qt.UserRole).processed_data for item in checked_items]
-                    min_x = [np.amin(data[n][0]) for n,_ in enumerate(checked_items)]
-                    max_x = [np.amax(data[n][0]) for n,_ in enumerate(checked_items)]
-                    min_y = [np.amin(data[n][1]) for n,_ in enumerate(checked_items)]
-                    max_y = [np.amax(data[n][1]) for n,_ in enumerate(checked_items)]
-                    dmin_x = [np.abs(data[n][0][1,0]-data[n][0][0,0]) for n,_ in enumerate(checked_items)]
-                    dmin_y = [np.abs(data[n][1][0,1]-data[n][1][0,0]) for n,_ in enumerate(checked_items)]
-                    grid_x = np.arange(np.min(min_x),np.max(max_x),np.min(dmin_x))
-                    grid_y = np.arange(np.min(min_y),np.max(max_y),np.min(dmin_y))
-                    y_g, x_g = np.meshgrid(grid_y, grid_x)
-                    points_x = np.concatenate([data[n][0].flatten() for n,_ in enumerate(checked_items)])
-                    points_y = np.concatenate([data[n][1].flatten() for n,_ in enumerate(checked_items)])
-                    values_z = np.concatenate([data[n][2].flatten() for n,_ in enumerate(checked_items)])
-                    g_data = griddata(np.stack([points_x,points_y],-1), values_z, (x_g,y_g), method='nearest')
-                    data0 = checked_items[0].data(QtCore.Qt.UserRole)
-                    view_settings = {
-                            'Minimum': np.min(g_data), 'Maximum': np.max(g_data), 
-                            'Midpoint': 0.5*(np.min(g_data)+np.max(g_data)),
-                            'Color Map': 'magma', 'Color Map Type': 'Uniform',
-                            'Norm': MidpointNormalize(vmin=np.min(g_data), 
-                                                      vmax=np.max(g_data), 
-                                                      midpoint= 0.5*(np.min(g_data)+np.max(g_data))),
-                            'Locked': 0, 'MidLock': 0, 'Reverse': 2}
-                    dictionary_list = [{'File Name': output_name, 'Settings': data0.default_settings,
-                                      'Filters': [], 'View Settings': view_settings,
-                                      'Raw Data': [x_g,y_g,g_data]}]
-                    np.save(output_filepath, dictionary_list)
-                print('Merged files into file '+output_filepath)
-        except:
-            print('Cannot merge these files...')
-            
-            
+                              
     def apply_preset(self, preset_number):
-        checked_items = [self.file_list.item(index) for index in range(self.file_list.count()) 
-                         if self.file_list.item(index).checkState() == 2]
+        checked_items = self.get_checked_items()
         if checked_items:
             for item in checked_items:
-                data = item.data(QtCore.Qt.UserRole)
                 for preset_item in PRESETS[preset_number].items():
-                    if preset_item[0] in data.settings.keys():
-                        data.settings[preset_item[0]] = preset_item[1]
+                    if preset_item[0] in item.data.settings.keys():
+                        item.data.settings[preset_item[0]] = preset_item[1]
                     elif preset_item[0] == 'canvas_bounds':
                         b = preset_item[1] # (left, bottom, right, top)
-                        data.figure.subplots_adjust(b[0], b[1], b[2], b[3])
+                        item.data.figure.subplots_adjust(b[0], b[1], b[2], b[3])
                     elif preset_item[0] == 'show_meta_settings':
-                        data.show_settings = preset_item[1]
+                        item.data.show_settings = preset_item[1]
             self.update_plots()
-                #data.apply_plot_settings()
-                #self.show_current_plot_settings()
-                #self.canvas.draw()
+
+class DataItem(QtWidgets.QListWidgetItem):
+    def __init__(self, data):
+        super().__init__()
+        self.data = data
+        
+        self.setFlags(self.flags() | QtCore.Qt.ItemIsUserCheckable)
+        self.setCheckState(QtCore.Qt.Unchecked)
+        self.setText(self.data.label)
+
+class BaseClassData:    
+    # Set default plot settings
+    DEFAULT_PLOT_SETTINGS = {}
+    DEFAULT_PLOT_SETTINGS['title'] = '<label>'
+    DEFAULT_PLOT_SETTINGS['xlabel'] = ''
+    DEFAULT_PLOT_SETTINGS['ylabel'] = ''
+    DEFAULT_PLOT_SETTINGS['clabel'] = ''
+    DEFAULT_PLOT_SETTINGS['titlesize'] = '14'
+    DEFAULT_PLOT_SETTINGS['labelsize'] = '14' 
+    DEFAULT_PLOT_SETTINGS['ticksize'] = '14'
+    DEFAULT_PLOT_SETTINGS['linewidth'] = '1.5'
+    DEFAULT_PLOT_SETTINGS['spinewidth'] = '0.8'
+    DEFAULT_PLOT_SETTINGS['columns'] = '0,1,2'
+    DEFAULT_PLOT_SETTINGS['colorbar'] = 'True'
+    DEFAULT_PLOT_SETTINGS['minorticks'] = 'False'
+    DEFAULT_PLOT_SETTINGS['delimiter'] = ''
+    DEFAULT_PLOT_SETTINGS['linecolor'] = 'black'
+    DEFAULT_PLOT_SETTINGS['maskcolor'] = 'black'
+    DEFAULT_PLOT_SETTINGS['lut'] = '512'
+    DEFAULT_PLOT_SETTINGS['rasterized'] = 'True'
+    DEFAULT_PLOT_SETTINGS['dpi'] = '300'
+    DEFAULT_PLOT_SETTINGS['transparent'] = 'False'
+    DEFAULT_PLOT_SETTINGS['shading'] = 'auto'
     
-class Data:
-    def __init__(self, filepath, canvas, data=None, do_load_data=True):
+    # Set default view settings
+    DEFAULT_VIEW_SETTINGS = {}
+    DEFAULT_VIEW_SETTINGS['Minimum'] = 0
+    DEFAULT_VIEW_SETTINGS['Maximum'] = 0
+    DEFAULT_VIEW_SETTINGS['Midpoint'] = 0
+    DEFAULT_VIEW_SETTINGS['Colormap'] = 'magma'
+    DEFAULT_VIEW_SETTINGS['Colormap Type'] = 'Uniform'
+    DEFAULT_VIEW_SETTINGS['Locked'] = False
+    DEFAULT_VIEW_SETTINGS['MidLock'] = False
+    DEFAULT_VIEW_SETTINGS['Reverse'] = False  
+    
+    def __init__(self, filepath, canvas):
         self.filepath = filepath
-        self.filename = os.path.basename(filepath)
         self.canvas = canvas
-        self.default_settings = DEFAULT_PLOT_SETTINGS
-        self.default_filters = []
-        self.filters = copy.deepcopy(self.default_filters)
-        self.settings = self.default_settings.copy()
-        self.old_settings = self.default_settings.copy()
-        self.columns = [int(s) for s in self.default_settings['columns'].split(',')]
-        self.duplicate = False
-        self.measurement_bounds = None
-        self.draw_full_range = False
-        self.channels = []
-        self.processed_data = None
-        self.meta_data = None
-        self.meta_data_name = None
-        self.rcfilter_correct = False
-        self.four_terminal = False
-        self.dataset = None
-        self.npy_file = False
-        self.qcodes_file = False
-        self.selected_indices = [0, 0]
-        self.figure = None
-        self.axes = None
-        self.image = None
-        self.cbar = None
-        self.orientation = None
-        self.multi_orientation = None
-        self.cropping = False
-        self.drawing_diagonal_linecut = False
-        self.drawing_circular_linecut = False
-        self.list_points = []
-        self.index_dependent_parameter = DEFAULT_INDEX_DEPENDENT_PARAMETER
-        self.dependent_parameters = None
-        self.remaining_time = None
-        self.remaining_time_string = ''
-        self.last_modified_time = None
+        self.label = os.path.basename(self.filepath)
+        
+        self.settings = self.DEFAULT_PLOT_SETTINGS.copy()
+        self.view_settings = self.DEFAULT_VIEW_SETTINGS.copy()
+        self.filters = []
+
         try: # on Windows
             self.creation_time = os.path.getctime(filepath)
-        except:
+        except Exception:
             try: # on Mac
                 self.creation_time = os.stat(filepath).st_birthtime
-            except:
+            except Exception:
                 self.creation_time = None
-
-     
-        if isinstance(data, dict): # for .npy files, saved using the "Save Session" menu
-            self.npy_file = True
-            if 'File Path' in data:
-                self.filepath = data['File Path']
-            self.columns = [int(s) for s in data['Settings']['columns'].split(',')]
-            self.raw_data = data['Raw Data']
-            for setting, value in data['Settings'].items():
-                if setting in self.settings:
-                    self.settings[setting] = value
-            self.filters = data['Filters']
-            self.view_settings = data['View Settings']
-            if 'Meta' in data:
-                self.interpret_meta_file(data['Meta'], change_labels=False)
-                self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
-                self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
-            else:
-                self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
-                
-        elif qcodes_imported and isinstance(data, qc.dataset.data_set.DataSet): # for QCoDeS databases
-            self.qcodes_file = True         
-            self.dataset = data
-            self.view_settings = {
-                    'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
-                    'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
-                    'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
-                    'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP} 
-                       
-        else:
-            if do_load_data:
-                self.load_data()
-            meta_file_exists = os.path.isfile(os.path.dirname(self.filepath)+'/meta.json')
-            if self.filename == 'data.dat' and meta_file_exists: # Copenhagen meta data file
-                self.interpret_meta_file()
-                if do_load_data:
-                    self.processed_to_raw()
-                    self.rcfilter_correct = DEFAULT_VALUE_RCFILTER_CORRECT
-                    self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=True)
-                else:
-                    self.meta_unit_conversion()
-            else:
-                if do_load_data:
-                    self.processed_to_raw()
-                    self.apply_all_filters(update_color_limits=False, refresh_unit_conversion=False)
-            if do_load_data:
-                min_map = np.min(self.processed_data[-1])
-                max_map = np.max(self.processed_data[-1])
-                mid_map = 0.5*(min_map+max_map)
-                self.view_settings = {
-                        'Minimum': min_map, 'Maximum': max_map, 'Midpoint': mid_map,
-                        'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
-                        'Norm': MidpointNormalize(vmin=min_map, vmax=max_map, midpoint=mid_map),
-                        'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP}
-            else:
-                self.view_settings = {
-                    'Minimum': 0, 'Maximum': 0, 'Midpoint': 0,
-                    'Color Map': DEFAULT_COLORMAP, 'Color Map Type': 'Uniform',
-                    'Norm': MidpointNormalize(vmin=0, vmax=1, midpoint=0.5),
-                    'Locked': 0, 'MidLock': 0, 'Reverse': DEFAULT_REVERSE_COLORMAP} 
-
         
-    def load_data(self):
-        if PRINT_FUNCTION_CALLS:
-            print('load_data')
-        if not self.qcodes_file:
-            column_data = np.genfromtxt(self.filepath, delimiter=self.settings['delimiter'])
-        else:
-            column_data = self.load_qcodes_data()
+    def get_column_data(self):
+        column_data = np.genfromtxt(self.filepath, delimiter=self.settings['delimiter'])
         self.measured_data_points = column_data.shape[0]
-        
-        # Determine the number of unique values in the first column to determine the shape of the data (l1,l0)
-        # TODO fix IndexError: tuple index out of range at self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]
-        if column_data.ndim == 1: # if empty array or only one row has been written
-            if column_data.size == 0: # if empty array
-                unique_values, indices = np.array([0]), np.array([0])
-            else: # if only one row has been written
-                unique_values, indices = np.array([column_data[self.columns[0]]]), np.array([0])
-        elif column_data.ndim == 2: # if at least two rows are written
-            unique_values, indices = np.unique(column_data[:,self.columns[0]], return_index=True)
-        sorted_indices = np.sort(indices)
-        l1 = len(unique_values) # number of sweeps (3D)
-        if l1 > 1:
-            l0 = sorted_indices[1] # number of points in a sweep
-            # Ignore the data from the last sweep if unfinished
-            if len(column_data[sorted_indices[-1]::,0]) < l0:
-                l1 = l1-1
-        else:
-            l0 = column_data.shape[0]
-        
-        if l1 > 1: # If two or more sweeps are finished
-
-            # Check if second column also has repeated values -> if yes, skip that column
-            # TODO Fails when 2D plot has first two y-values the same (e.g. when lockin signal is zero)
-            if COMBINATION_GATE_SWEEPS_POSSIBLE: # TODO how to do this more generally   
-                if column_data[1,self.columns[1]] == column_data[0,self.columns[1]]:
-                    self.columns = [self.columns[0]] + [i+1 for i in self.columns[1:]]
-            
-            # Determine if file is 2D or 3D by checking if first two values in first column are repeated
-            if (column_data[1,self.columns[0]] != column_data[0,self.columns[0]]) or len(self.columns) == 2: # if 2D
-                self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
-                if len(self.columns) == 3: # if file is 2D change to two columns
-                    self.columns = self.columns[:-1]
-            else: # if 3D
-                if indices[1] > indices[0]: # If first column is sorted from low to high -> reshape normally
-                    self.raw_data = [np.reshape(column_data[:l0*l1,x], (l1,l0)) for x in range(column_data.shape[1])]
-                else: # If first column is sorted from high to low -> flip and then reshape normally
-                    self.raw_data = [np.reshape(column_data[l0*l1-1::-1,x], (l1,l0)) for x in range(column_data.shape[1])]
-                    
-                if self.raw_data[1][0,0] > self.raw_data[1][0,1]: # flip if second column is sorted from high to low
-                    self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
-                    
-        elif l1 == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting
-            if column_data.size == 0:
-                self.raw_data = [np.array([]) for x in range(12)]
-            else:
-                self.raw_data = [np.tile(column_data[:l0,x], (2,1)) for x in range(column_data.shape[1])]    
-                if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
-                    self.raw_data[self.columns[0]][0,:] = unique_values[0]
-                    self.raw_data[self.columns[0]][1,:] = unique_values[1]
-                else: # if first sweep is not finished -> set duplicate x-columns to +1 and -1 of actual value
-                    self.raw_data[self.columns[0]][0,:] = unique_values[0]-1
-                    self.raw_data[self.columns[0]][1,:] = unique_values[0]+1
-            
-        self.settings['columns'] = ','.join([str(i) for i in self.columns])
-            
-    def load_qcodes_data(self):
-        if PRINT_FUNCTION_CALLS:
-            print('load_qcodes_data')
-        self.dependent_parameters = [p.name for p in self.dataset.dependent_parameters]
-        dependent_par = self.dependent_parameters[self.index_dependent_parameter]
-        data_dict = self.dataset.get_parameter_data(dependent_par)[dependent_par]
-        pars = list(data_dict.keys())
-        if len(pars) == 2: # file is 2D
-            x_par, y_par = pars[1], pars[0]
-            column_data = np.column_stack((data_dict[x_par], data_dict[y_par]))
-        else: # file is 3D
-            x_par, y_par, z_par = pars[1], pars[2], pars[0]
-            column_data = np.column_stack((data_dict[x_par], data_dict[y_par], data_dict[z_par]))
-            self.settings['clabel'] =  '{} ({})'.format(self.dataset.paramspecs[z_par].label, self.dataset.paramspecs[z_par].unit)
-        self.settings['xlabel'] =  '{} ({})'.format(self.dataset.paramspecs[x_par].label, self.dataset.paramspecs[x_par].unit)
-        self.settings['ylabel'] =  '{} ({})'.format(self.dataset.paramspecs[y_par].label, self.dataset.paramspecs[y_par].unit)
         return column_data
-
-    def interpret_meta_file(self, meta_data=None, change_labels=True):
-        if PRINT_FUNCTION_CALLS:
-            print('interpret_meta_file')
-        if meta_data:
-            self.meta_data = meta_data
-        else:
-            self.meta_file = os.path.dirname(self.filepath)+'/meta.json'
-            with open(self.meta_file) as f:
-                self.meta_data = json.load(f)            
-        self.channels = [channel['name'] for channel in self.meta_data['columns']]
-        if change_labels:
-            self.settings['xlabel'] = self.channels[self.columns[0]]
-            self.settings['ylabel'] = self.channels[self.columns[1]]
-            if len(self.columns) == 3:
-                self.settings['clabel'] = self.channels[self.columns[2]]          
-        self.meta_data_name = (os.path.basename(os.path.dirname(self.filepath)) + ' ' +
-                               self.meta_data['timestamp'].split(' ')[1] + ' ' + self.meta_data['name'])
-        if 'source' in self.channels and 'dc_curr' in self.channels:
-            self.settings['rc-filter'] = str(DEFAULT_RC_FILTER)
-        try:
-            new_index = self.channels.index(DEFAULT_CHANNEL)
-            self.columns[-1] = new_index
-            self.settings['columns'] = self.settings['columns'][:-1]+str(new_index)
-        except:
-            print('Default channel',DEFAULT_CHANNEL,'not found...')
-        
-        if DEFAULT_SHOW_METADATANAME:
-            self.settings['title'] = '<metadataname>'
-        
-        self.settings_string = ''
-        channels_to_show = CHANNELS_TO_SHOW
-        meta_channels = self.meta_data['setup']['channels']
-        for instrument in self.meta_data['register']['instruments']:
-            if instrument['name'] == 'dac':
-                dac = instrument
-                break
-        for channel in channels_to_show:
-            try:
-                if channel in meta_channels:
-                    for register_channel in self.meta_data['register']['channels']:
-                        if register_channel['name'] == channel: 
-                            if register_channel['instrument'] == 'dac':  
-                                value = dac['current_values'][register_channel['channel_id']]
-                                self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                break
-                            elif register_channel['instrument'] == 'smua':
-                                for instrument in self.meta_data['register']['instruments']:
-                                    if instrument['name'] == 'smua' and 'current_values' in instrument.keys():
-                                        value = instrument['current_values']['v']
-                                        self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                        break
-                            elif register_channel['instrument'] == 'smub':
-                                for instrument in self.meta_data['register']['instruments']:
-                                    if instrument['name'] == 'smub' and 'current_values' in instrument.keys():
-                                        value = instrument['current_values']['v']
-                                        self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                        break
-                    else:
-                        if channel == 'Bx' or channel == 'Bz':
-                            for instrument in self.meta_data['register']['instruments']:
-                                if instrument['name'] == 'magnet':
-                                    value = instrument['field'][channel[1:]]
-                                    self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                                    break
-                elif channel == 'T':
-                    for instrument in self.meta_data['register']['instruments']:
-                        if instrument['name'] == 'triton':
-                            value = instrument['temperatures']['MC']*1000
-                            self.settings_string += channel+': '+'{:.3g}'.format(value)+'\n'
-                            break
-            except:
-                print('Could not add channel',channel,'...')
-         
-    def correct_for_rcfilters(self):
-        if PRINT_FUNCTION_CALLS:
-            print('correct_for_rcfilters')
-            
-        if 'lockin_bias/X' in self.channels and 'lockin_curr/X' in self.channels: # assume 4-terminal, current-biased
-            self.four_terminal = True
-        else:
-            self.four_terminal = False
-            
-        if 'source' in self.channels and 'dc_curr' in self.channels:
-            source_index = self.channels.index('source')
-            if source_index in self.columns:
-                if PRINT_FUNCTION_CALLS:
-                    print('Correcting source bias voltage for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
-                source_divider = self.meta_data['setup']['meta']['source_divider']
-                curr_index = self.channels.index('dc_curr')                    
-                curr_amp = self.meta_data['setup']['meta']['current_amp']
-                source_data = self.raw_data[source_index] / source_divider
-                curr_data = self.raw_data[curr_index] / curr_amp
-                source_corrected = (source_data - float(self.settings['rc-filter'])*curr_data)*source_divider
-                self.processed_data[self.columns.index(source_index)] = np.copy(source_corrected)
-        
-        if 'lockin_curr/X' in self.channels:
-            lockin_index = self.channels.index('lockin_curr/X')
-            if lockin_index in self.columns:
-                if PRINT_FUNCTION_CALLS:
-                    print('Correcting lockin_curr/X for total rc-filter resistance of',self.settings['rc-filter'],'Ohm...')
-                for instrument in self.meta_data['register']['instruments']:
-                    if instrument['name'] == 'lockin_curr':
-                        break
-                sine_amplitude = float(instrument['config']['SLVL'])
-                lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
-                curr_amp = self.meta_data['setup']['meta']['current_amp']
-                conversion = curr_amp*sine_amplitude/lockin_divider # divide by this to convert lockin-signal to Siemens (1/Ohm)
-                lockin_data = self.raw_data[lockin_index]/conversion # in Siemens
-                series_resistance = float(self.settings['rc-filter']) # in Ohm
-                lockin_corrected = lockin_data/(1.-series_resistance*lockin_data)*conversion
-                self.processed_data[self.columns.index(lockin_index)] = np.copy(lockin_corrected)                
     
-    def meta_unit_conversion(self):
-        if PRINT_FUNCTION_CALLS:
-            print('meta_unit_conversion')
+    def get_columns(self):
+        return [int(col) for col in self.settings['columns'].split(',')]
+    
+    def load_and_reshape_data(self):
+        column_data = self.get_column_data()
+        if column_data.ndim == 1: # if empty array or single-row array
+            self.raw_data = None
+        else:
+            # Determine the number of unique values in the first column to determine the shape of the data
+            columns = self.get_columns()
+            unique_values, unique_indices = np.unique(column_data[:,columns[0]], 
+                                                      return_index=True)
+            if len(unique_values) > 1:
+                sorted_indices = sorted(unique_indices)
+                if len(column_data[sorted_indices[-1]::,0]) < sorted_indices[1]:
+                    data_shape = (len(unique_values)-1, sorted_indices[1])
+                else:
+                    data_shape = (len(unique_values), sorted_indices[1])
+            else:
+                data_shape = (1, column_data.shape[0])
+
+            if data_shape[0] > 1: # If two or more sweeps are finished
         
-        # Get bounds to be able to show full range during measurement
-        try: 
-            bound_from = self.meta_data['job']['from']
-            bound_to = self.meta_data['job']['to']
-        except KeyError:
-            bound_from = self.meta_data['job']['job']['from']
-            bound_to = self.meta_data['job']['job']['to']
-        self.measurement_bounds = [bound_from, bound_to]
-        
-        # Get total number of (to be) measured data points
-        self.total_data_points = 1 
-        if 'points' in self.meta_data['job'].keys():
-            self.total_data_points *= self.meta_data['job']['points']
-        if 'points' in self.meta_data['job']['job'].keys():
-            self.total_data_points *= self.meta_data['job']['job']['points']
-            
-        # If x-parameter is combination of channels -> take bounds that belongs to the displayed channel    
-        if isinstance(bound_from, list):
-            if self.channels[self.columns[0]] in self.meta_data['job']['chans']:
-                bound_from = bound_from[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
-                bound_to = bound_to[self.meta_data['job']['chans'].index(self.channels[self.columns[0]])]
-        
-        # Unit conversion of different channels (using data from meta.json file)
-        if 'source' in self.channels:
-            source_index = self.channels.index('source')
-            if source_index in self.columns:
-                source_divider = self.meta_data['setup']['meta']['source_divider']
-                SOURCE_UNIT = 1e-3 # Convert V to mV  
-                if PRINT_FUNCTION_CALLS:
-                    print('Converting source units to millivolts...')
-                if source_divider*SOURCE_UNIT != 1.0:
-                    divide = '%.3g' % (source_divider*SOURCE_UNIT)
-                    axis = ['X','Y','Z'][self.columns.index(source_index)] 
-                    self.filters.append({'Name': 'Divide', 'Method': axis, 
-                                         'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(source_index) == 0:
-                    self.settings['xlabel'] = 'Bias voltage (mV)'
-                elif self.columns.index(source_index) == 1:
-                    self.settings['ylabel'] = 'Bias voltage (mV)'
-                if source_index == 0:
-                    self.measurement_bounds = [bound_from/(source_divider*SOURCE_UNIT),
-                                               bound_to/(source_divider*SOURCE_UNIT)]
-        
-        # Gate voltages are combinations of a coarse channel and a fine channel
-        fine_gates = [channel for channel in self.channels if channel[0] == 'g' and channel[-1] == 'f']
-        for gate in fine_gates:
-            gate_index = self.channels.index(gate)
-            if gate_index in self.columns:                              
-                if PRINT_FUNCTION_CALLS:
-                    print('Converting '+gate+' units to volts...')
-                DAC_FINE_DIVIDER = 200
-                DAC_FINE_OFFSET = 0.05
-                divide = '%.3g' % DAC_FINE_DIVIDER
-                gate_axis = ['X','Y','Z'][self.columns.index(gate_index)] 
-                self.filters.append({'Name': 'Divide', 'Method': gate_axis, 
-                                     'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if DAC_FINE_OFFSET != 0.0:
-                    fine_offset = '%.3g' % DAC_FINE_OFFSET
-                    self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
-                                         'Setting 1': fine_offset, 'Setting 2': '', 'Checked': 2})                    
-                if PRINT_FUNCTION_CALLS:
-                    print('Adding coarse gate voltage...')
-                coarse_gate = gate[:-1]
-                for instrument in self.meta_data['register']['instruments']:
-                    if instrument['name'] == 'dac':
-                        dac = instrument
-                        break
-                for dac_channel in self.meta_data['register']['channels']:
-                    if dac_channel['name'] == coarse_gate:
-                        dac_channel_coarse_gate = dac_channel['channel_id']
-                        break
-                coarse_offset_dac = dac['current_values'][dac_channel_coarse_gate]
-                coarse_offset = '%.3g' % coarse_offset_dac
-                self.filters.append({'Name': 'Offset', 'Method': gate_axis, 
-                                     'Setting 1': coarse_offset, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate voltage '+gate[1:]+' (V)'
-                elif self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate voltage '+gate[1:]+' (V)'
-                if gate_index == 0:   
-                    self.measurement_bounds = [bound_from/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac,
-                                               bound_to/DAC_FINE_DIVIDER+DAC_FINE_OFFSET+coarse_offset_dac]
-        
-        coarse_gates = [channel for channel in self.channels if channel[0] == 'g' and len(channel) == 2]
-        for gate in coarse_gates:
-            gate_index = self.channels.index(gate)
-            if gate_index in self.columns:
-                if self.columns.index(gate_index) == 0:
-                    self.settings['xlabel'] = 'Gate voltage '+gate[1]+' (V)'
-                elif self.columns.index(gate_index) == 1:
-                    self.settings['ylabel'] = 'Gate voltage '+gate[1]+' (V)'  
-                if gate_index == 0:   
-                    self.measurement_bounds = [bound_from, bound_to]
-            
-        if 'dc_curr' in self.channels:
-            curr_index = self.channels.index('dc_curr')
-            if curr_index in self.columns:
-                curr_amp = self.meta_data['setup']['meta']['current_amp']
-                if PRINT_FUNCTION_CALLS:
-                    print('Converting dc_curr units to nano-amperes...')
-                CURR_UNIT = 1e-9 # Ampere to nano-ampere
-                if curr_amp*CURR_UNIT != 1.0:
-                    divide = '%.3g' % (curr_amp*CURR_UNIT)
-                    axis = ['X','Y','Z'][self.columns.index(curr_index)] 
-                    self.filters.append({'Name': 'Divide', 'Method': axis, 
-                                         'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if self.columns.index(curr_index) == 0:
-                    self.settings['xlabel'] = '$I$ (nA)'
-                elif self.columns.index(curr_index) == 1:
-                    self.settings['ylabel'] = '$I$ (nA)'
-                elif self.columns.index(curr_index) == 2:
-                    self.settings['clabel'] = '$I$ (nA)'
-        
-        if 'lockin_curr/X' in self.channels:
-            lockin_index = self.channels.index('lockin_curr/X')
-            if lockin_index in self.columns:
-                for instrument in self.meta_data['register']['instruments']:
-                    if instrument['name'] == 'lockin_curr':
-                        break
-                sine_amplitude = float(instrument['config']['SLVL'])
-                lockin_divider = self.meta_data['setup']['meta']['lock_sig_divider']
-                curr_amp = self.meta_data['setup']['meta']['current_amp']
-                LOCKIN_UNIT = 1e-6 # Siemens to microsiemens
-                conversion_factor = curr_amp*sine_amplitude/lockin_divider*LOCKIN_UNIT
-                if conversion_factor != 1.0:
-                    if PRINT_FUNCTION_CALLS:
-                        print('Correcting lockin_curr/X units to microsiemens...')
-                    divide = '%.3g' % conversion_factor
-                    axis = ['X','Y','Z'][self.columns.index(lockin_index)] 
-                    self.filters.append({'Name': 'Divide', 'Method': axis, 
-                                         'Setting 1': divide, 'Setting 2': '', 'Checked': 2})
-                if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
-                    if PRINT_FUNCTION_CALLS:
-                        print('Correcting lockin_curr/X units from microsiemens to e^2/h...')
-                    multiply_e2h = '%.6g' % 0.0258128
-                    axis = ['X','Y','Z'][self.columns.index(lockin_index)] 
-                    self.filters.append({'Name': 'Multiply', 'Method': axis, 
-                                         'Setting 1': multiply_e2h, 'Setting 2': '', 'Checked': 2})
+                # Check if second column also has unique values at the same 
+                # indices as the first column and if the first two values in 
+                # the second column repeat ; if both True, skip that column.
+                # Relevant for measurements where two parameters are swept simultaneously
+                _, next_unique_indices = np.unique(column_data[:,columns[1]], 
+                                                   return_index=True)
+                if ((np.array_equal(unique_indices, next_unique_indices) or
+                     np.array_equal(unique_indices, next_unique_indices[::-1])) and
+                    (column_data[1,columns[1]] == column_data[0,columns[1]])):
+                    columns[1] += 1
+                    if len(columns) > 2 and columns[1] == columns[2]:
+                        columns[2] += 1
                 
-                if self.columns.index(lockin_index) == 1:
-                    if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
-                        self.settings['ylabel'] = 'd$I$/d$V$ ($e^2/h$)'
-                    else:
-                        self.settings['ylabel'] = 'd$I$/d$V$ (μS)'
-                elif self.columns.index(lockin_index) == 2:
-                    if CONVERT_MICROSIEMENS_TO_ESQUAREDH:
-                        self.settings['clabel'] = 'd$I$/d$V$ ($e^2/h$)'
-                    else:
-                        self.settings['clabel'] = 'd$I$/d$V$ (μS)'
+                # Determine if file is 2D or 3D by checking if first two values in first column are repeated
+                if column_data[1,columns[0]] != column_data[0,columns[0]] or len(columns) == 2:
+                    self.raw_data = [column_data[:,x] for x in range(column_data.shape[1])]            
+                    columns = columns[:2]
+                else: 
+                    # flip if first column is sorted from high to low 
+                    if unique_values[1] < unique_values[0]: 
+                        column_data = np.flipud(column_data)
+                    self.raw_data = [np.reshape(column_data[:data_shape[0]*data_shape[1],x], data_shape) 
+                                     for x in range(column_data.shape[1])]
+                    # flip if second column is sorted from high to low
+                    if self.raw_data[1][0,0] > self.raw_data[1][0,1]: 
+                        self.raw_data = [np.fliplr(self.raw_data[x]) for x in range(column_data.shape[1])]
+                        
+            elif data_shape[0] == 1: # if first two sweeps are not finished -> duplicate data of first sweep to enable 3D plotting
+                self.raw_data = [np.tile(column_data[:data_shape[1],x], (2,1)) for x in range(column_data.shape[1])]    
+                if len(unique_values) > 1: # if first sweep is finished -> set second x-column to second x-value
+                    self.raw_data[columns[0]][0,:] = unique_values[0]
+                    self.raw_data[columns[0]][1,:] = unique_values[1]
+                else: # if first sweep is not finished -> set duplicate x-columns to +1 and -1 of actual value
+                    self.raw_data[columns[0]][0,:] = unique_values[0]-1
+                    self.raw_data[columns[0]][1,:] = unique_values[0]+1
+            self.settings['columns'] = ','.join([str(i) for i in columns])
+                   
+    def copy_raw_to_processed_data(self):
+        self.processed_data = [np.copy(self.raw_data[x]) for x in self.get_columns()]
 
-        if 'lockin_bias/X' in self.channels and 'lockin_curr/X' in self.channels: # assume 4-terminal, current-biased
-            lockin_bias_index = self.channels.index('lockin_bias/X')
-            if lockin_bias_index in self.columns:
-                curr_amp = self.meta_data['setup']['meta']['current_amp']
-                bias_amp = self.meta_data['setup']['meta']['bias_amp']
-                if PRINT_FUNCTION_CALLS:
-                    print('Converting lockin_bias/X to 4-terminal dV/dI in units of Ohm...')
-                conversion_factor = curr_amp/bias_amp
-                if conversion_factor != 1.0:
-                    divide = '%.3g' % conversion_factor
-                    axis = ['X','Y','Z'][self.columns.index(lockin_bias_index)] 
-                    self.filters.append({'Name': 'Multiply', 'Method': axis, 
-                                         'Setting 1': divide, 'Setting 2': '', 'Checked': 2})                
-                if self.columns.index(lockin_bias_index) == 1:
-                    self.settings['ylabel'] = 'd$V$/d$I$ ($\Omega$)'
-                elif self.columns.index(lockin_bias_index) == 2:
-                    self.settings['clabel'] = 'd$V$/d$I$ ($\Omega$)'
-                self.four_terminal = True
+    def prepare_data_for_plot(self, reload_data=False, refresh_filters=False):
+        if not hasattr(self, 'raw_data') or reload_data:
+            self.load_and_reshape_data()
+        if self.raw_data:
+            self.copy_raw_to_processed_data()
+            self.apply_all_filters()
         else:
-            self.four_terminal = False
-        
-        if 'bg' in self.channels:
-            bg_index = self.channels.index('bg')
-            if bg_index in self.columns:
-                if self.columns.index(bg_index) == 0:
-                    self.settings['xlabel'] = 'Backgate voltage (V)'
-                elif self.columns.index(bg_index) == 1:
-                    self.settings['ylabel'] = 'Backgate voltage (V)'
-                if bg_index == 0:   
-                    self.measurement_bounds = [bound_from, bound_to]
+            self.processed_data = None
 
-        if 'sg' in self.channels:
-            sg_index = self.channels.index('sg')
-            if sg_index in self.columns:
-                if self.columns.index(sg_index) == 0:
-                    self.settings['xlabel'] = 'Side gates voltage (V)'
-                elif self.columns.index(sg_index) == 1:
-                    self.settings['ylabel'] = 'Side gates voltage (V)'
-                if sg_index == 0:   
-                    self.measurement_bounds = [bound_from, bound_to]
-        
-        if 'Bx' in self.channels:
-            if self.channels.index('Bx') == 0:  
-                self.measurement_bounds = [bound_from, bound_to]
-        
-        if 'Bz' in self.channels:
-            if self.channels.index('Bz') == 0:  
-                self.measurement_bounds = [bound_from, bound_to]
-                
-        if 'Br' in self.channels:
-            if self.channels.index('Br') == 0:  
-                self.measurement_bounds = [bound_from, bound_to]
-               
-    def processed_to_raw(self):
-        if PRINT_FUNCTION_CALLS:
-            print('processed_to_raw')
-        self.processed_data = [np.copy(self.raw_data[i]) for i in self.columns]
-    
-    def refresh_data(self, update_color_limits=False, refresh_unit_conversion=False):
-        if PRINT_FUNCTION_CALLS:
-            print('refresh_data')
-        try:
-            if not self.npy_file: # if data is not directly from a npy file
-                self.load_data()           
-            self.apply_all_filters(update_color_limits, refresh_unit_conversion)
-            
-            if self.measured_data_points and self.total_data_points and self.creation_time:
-                self.last_modified_time = os.path.getmtime(self.filepath)
-                spent_time = self.last_modified_time - self.creation_time
-                self.progress_fraction = self.measured_data_points/self.total_data_points             
-                total_time = spent_time / self.progress_fraction
-                remaining_seconds = total_time - spent_time
-                self.remaining_time = timedelta(seconds=remaining_seconds)
-                self.remaining_time_string = '    Progress last measurement:  {:d}% Completed  -  Remaining time:'.format(int(self.progress_fraction*100)) + \
-                                             ' '+str(self.remaining_time).split('.')[0] + \
-                                             '  -  Finishes at: '+str(datetime.now()+self.remaining_time).split('.')[0]
-        except:
-            print('Could not refresh...')
-            if SHOW_ERRORS:
-                raise
-    
-    def add_plot(self):
-        if PRINT_FUNCTION_CALLS:
-            print('add_plot')
-        data = self.processed_data
-        cmap_str = self.view_settings['Color Map']
-        if self.view_settings['Reverse']:
-            cmap_str = cmap_str+'_r'
-        cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
-        cmap.set_bad(self.settings['maskcolor'])
-        self.image = self.axes.pcolormesh(data[0], data[1], data[2], shading='auto', 
-                                          norm=self.view_settings['Norm'], cmap=cmap,
-                                          rasterized=self.settings['rasterized'])
-        if self.settings['colorbar'] == 'True':
-            self.cbar = self.figure.colorbar(self.image, orientation='vertical')
-        if self.draw_full_range:        
-            self.axes.set_xlim(left=min(self.measurement_bounds), 
-                               right=max(self.measurement_bounds))
-        self.cursor = Cursor(self.axes, useblit=True, 
-                             color=self.settings['linecolor'], linewidth=0.5)
-        if self.settings['metadata'] == 'True':
-            self.axes.text(1.2, 0, self.settings_string, 
-                           fontsize=self.settings['ticksize'], 
-                           transform=self.axes.transAxes)
-        self.apply_plot_settings()
+    def add_plot(self, dim):
+        if self.processed_data:
+            cmap_str = self.view_settings['Colormap']
+            if self.view_settings['Reverse']:
+                cmap_str += '_r'
+            cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
+            cmap.set_bad(self.settings['maskcolor'])
+            if dim == 2:
+                self.image = self.axes.plot(self.processed_data[0], 
+                                            self.processed_data[1], color=cmap(0.5))
+            elif dim == 3:
+                norm = MidpointNormalize(vmin=self.view_settings['Minimum'], 
+                                         vmax=self.view_settings['Maximum'], 
+                                         midpoint=self.view_settings['Midpoint'])
+                self.image = self.axes.pcolormesh(self.processed_data[0], 
+                                                  self.processed_data[1], 
+                                                  self.processed_data[2], 
+                                                  shading=self.settings['shading'], 
+                                                  norm=norm, cmap=cmap,
+                                                  rasterized=self.settings['rasterized'])
+                if self.settings['colorbar'] == 'True':
+                    self.cbar = self.figure.colorbar(self.image, orientation='vertical')
+            self.cursor = Cursor(self.axes, useblit=True, 
+                                 color=self.settings['linecolor'], linewidth=0.5)
+            self.apply_plot_settings()
 
-    def add_plot_2d(self):
-        if PRINT_FUNCTION_CALLS:
-            print('add_plot_2d')
-        data = self.processed_data
-        cmap = self.view_settings['Color Map']
-        if self.view_settings['Reverse']:
-            cmap = cmap+'_r'
-        self.image = self.axes.plot(data[0], data[1], color=cm.get_cmap(cmap)(0.5))
-        self.cursor = Cursor(self.axes, useblit=True, 
-                             color=self.settings['linecolor'], linewidth=0.5)
-        if self.settings['metadata'] == 'True':
-            self.axes.text(1.02, 0, self.settings_string, 
-                           fontsize=self.settings['ticksize'], 
-                           transform=self.axes.transAxes)
-        self.apply_plot_settings()        
-        
     def reset_view_settings(self, overrule=False):
-        if PRINT_FUNCTION_CALLS:
-            print('reset_view_settings')
-        if self.view_settings['Locked'] == 0 or overrule == True:
-            self.view_settings['Minimum'] = np.min(self.processed_data[-1])
-            self.view_settings['Maximum'] = np.max(self.processed_data[-1])
-            self.view_settings['Midpoint'] = 0.5*(np.min(self.processed_data[-1])+
-                             np.max(self.processed_data[-1]))
-            self.view_settings['Norm'] = MidpointNormalize(
-                    vmin=self.view_settings['Minimum'], 
-                    vmax=self.view_settings['Maximum'], 
-                    midpoint=self.view_settings['Midpoint'])
-            self.view_settings['MidLock'] = 0
+        if not self.view_settings['Locked'] or overrule:
+            minimum = np.min(self.processed_data[-1])
+            maximum = np.max(self.processed_data[-1])
+            self.view_settings['Minimum'] = minimum
+            self.view_settings['Maximum'] = maximum
+            self.view_settings['Midpoint'] = 0.5*(minimum+maximum)
+            self.view_settings['MidLock'] = False
             
     def reset_midpoint(self):
-        if PRINT_FUNCTION_CALLS:
-            print('reset_midpoint')
-        if self.view_settings['MidLock'] == 0:
+        if self.view_settings['MidLock'] == False:
             self.view_settings['Midpoint'] = 0.5*(self.view_settings['Minimum']+
-                                                 self.view_settings['Maximum'])
-
-    def adjust_norm_plot(self, midpoint='reset'):
-        if PRINT_FUNCTION_CALLS:
-            print('adjust_norm_plot '+midpoint)
-        min_map = self.view_settings['Minimum']
-        mid_map = self.view_settings['Midpoint']
-        max_map = self.view_settings['Maximum']
-        if midpoint == 'up':
-            mid_map = mid_map - (max_map - min_map)*0.05
-            if mid_map < min_map:
-                mid_map = min_map
-        elif midpoint == 'down':
-            mid_map = mid_map + (max_map - min_map)*0.05
-            if mid_map > max_map:
-                mid_map = max_map
-        elif midpoint == 'reset':
-            mid_map = 0.5*(min_map + max_map)
-        self.view_settings['Midpoint'] = mid_map
-        self.apply_view_settings()
-        
+                                                  self.view_settings['Maximum'])
+                    
     def apply_plot_settings(self):
-        if PRINT_FUNCTION_CALLS:
-            print('apply_plot_settings')
-        settings = self.settings
-        self.axes.set_xlabel(settings['xlabel'], size=settings['labelsize'])
-        self.axes.set_ylabel(settings['ylabel'], size=settings['labelsize'])
+        self.axes.set_xlabel(self.settings['xlabel'], 
+                             size=self.settings['labelsize'])
+        self.axes.set_ylabel(self.settings['ylabel'], 
+                             size=self.settings['labelsize'])
         if isinstance(self.image, list):
-            self.image[0].set_linewidth(float(settings['linewidth']))
+            self.image[0].set_linewidth(float(self.settings['linewidth']))
         for axis in ['top','bottom','left','right']:
             self.axes.spines[axis].set_linewidth(float(self.settings['spinewidth']))
-        self.axes.tick_params(labelsize=settings['ticksize'], 
-                              width=float(self.settings['spinewidth']), color=rcParams['axes.edgecolor'])
-        if settings['minorticks'] == 'True':    
+        self.axes.tick_params(labelsize=self.settings['ticksize'], 
+                              width=float(self.settings['spinewidth']), 
+                              color=rcParams['axes.edgecolor'])
+        if self.settings['minorticks'] == 'True':
             self.axes.minorticks_on()
-        if settings['title'] == '<filename>':
-            self.axes.set_title(self.filename, size=settings['titlesize'])
-        elif settings['title'] == '<metadataname>':
-            self.axes.set_title("\n".join(wrap(self.meta_data_name,80)), size=settings['titlesize'])
+        if self.settings['title'] == '<label>':
+            self.axes.set_title(self.label, size=self.settings['titlesize'])
         else:
-            self.axes.set_title(settings['title'], size=settings['titlesize'])
-        if settings['colorbar'] == 'True' and len(self.columns) == 3:
-            self.cbar.ax.set_title(settings['clabel'], size=settings['labelsize'])
-            self.cbar.ax.tick_params(labelsize=settings['ticksize'], color=rcParams['axes.edgecolor']) 
+            self.axes.set_title(self.settings['title'], 
+                                size=self.settings['titlesize'])
+        if self.settings['colorbar'] == 'True' and len(self.get_columns()) == 3:
+            self.cbar.ax.set_title(self.settings['clabel'], 
+                                   size=self.settings['labelsize'])
+            self.cbar.ax.tick_params(labelsize=self.settings['ticksize'], 
+                                     color=rcParams['axes.edgecolor']) 
             self.cbar.outline.set_linewidth(float(self.settings['spinewidth']))
+        if ('Crop Y' in [filt.name for filt in self.filters] 
+            and len(self.get_columns()) == 3):
+            crop_filters = [filt for filt in self.filters 
+                            if filt.name == 'Crop Y']
+            for filt in crop_filters:
+                if filt.method == 'Lim' and filt.checkstate:
+                    self.axes.set_ylim(top=float(filt.settings[1]), 
+                                       bottom=float(filt.settings[0]))
+        if ('Crop X' in [filt.name for filt in self.filters]):
+            crop_filters = [filt for filt in self.filters 
+                            if filt.name == 'Crop Y']
+            for filt in crop_filters:
+                if filt.method == 'Lim' and filt.checkstate:
+                    self.axes.set_xlim(left=float(filt.settings[0]), 
+                                       right=float(filt.settings[1]))
 
     def apply_view_settings(self):
-        if PRINT_FUNCTION_CALLS:
-            print('apply_view_settings')
-        if len(self.columns) == 3:
-            self.view_settings['Norm'] = MidpointNormalize(vmin=self.view_settings['Minimum'], 
-                                                           vmax=self.view_settings['Maximum'], 
-                                                           midpoint=self.view_settings['Midpoint'])
-            self.image.set_norm(self.view_settings['Norm'])
+        if len(self.get_columns()) == 3:
+            norm = MidpointNormalize(vmin=self.view_settings['Minimum'], 
+                                     vmax=self.view_settings['Maximum'], 
+                                     midpoint=self.view_settings['Midpoint'])
+            self.image.set_norm(norm)
             if self.settings['colorbar'] == 'True':
                 self.cbar.update_normal(self.image)
                 self.cbar.ax.set_title(self.settings['clabel'], 
                                        size=self.settings['labelsize'])
-                self.cbar.ax.tick_params(labelsize=self.settings['ticksize'], color=rcParams['axes.edgecolor'])          
+                self.cbar.ax.tick_params(labelsize=self.settings['ticksize'], 
+                                         color=rcParams['axes.edgecolor'])          
     
     def apply_colormap(self):
-        if PRINT_FUNCTION_CALLS:
-            print('apply_colormap '+self.view_settings['Color Map'])
-        cmap_str = self.view_settings['Color Map']
+        cmap_str = self.view_settings['Colormap']
         if self.view_settings['Reverse']:
-            cmap_str = cmap_str+'_r'
+            cmap_str += '_r'
         cmap = cm.get_cmap(cmap_str, lut=int(self.settings['lut']))
         cmap.set_bad(self.settings['maskcolor'])
-        if len(self.columns) == 3:
+        if len(self.get_columns()) == 3:
             self.image.set_cmap(cmap)
         else:
-            self.image[0].set_color(cmap(0.5))
-            
-    def apply_filter(self, filter_settings, update_color_limits=True):
-        if PRINT_FUNCTION_CALLS:
-            print('apply_filter')
-        self.filters.append(filter_settings)
-        if filter_settings['Checked']:
-            if PRINT_FUNCTION_CALLS:
-                print('Applying '+filter_settings['Name']+'...')
-            self.processed_data = filters.apply(self.processed_data, filter_settings)
+            self.image[0].set_color(cmap(0.5))            
+
+    def apply_filter(self, filt, update_color_limits=True):
+        if filt.checkstate:
+            self.processed_data = filt.function(self.processed_data, 
+                                                filt.method,
+                                                filt.settings[0], 
+                                                filt.settings[1]) 
             if update_color_limits:
                 self.reset_view_settings()
                 self.apply_view_settings()
-
-    def apply_all_filters(self, update_color_limits=True, refresh_unit_conversion=False):
-        if PRINT_FUNCTION_CALLS:
-            print('apply_all_filters')
-        self.processed_to_raw()
-        
-        if self.meta_data:
-            if self.rcfilter_correct:
-                self.correct_for_rcfilters()
-            if refresh_unit_conversion:
-                self.filters = []
-                self.meta_unit_conversion()
-            if self.four_terminal:
-                lockin_bias_index = self.channels.index('lockin_bias/X')
-                if lockin_bias_index in self.columns:
-                    lockin_curr_index = self.channels.index('lockin_curr/X')
-                    self.processed_data[self.columns.index(lockin_bias_index)] = (self.raw_data[lockin_bias_index] / 
-                                        self.raw_data[lockin_curr_index])
-        
-        for _, filter_settings in enumerate(self.filters):
-            if filter_settings['Checked']:
-                if PRINT_FUNCTION_CALLS:
-                    print('Applying '+filter_settings['Name']+'...')
-                self.processed_data = filters.apply(self.processed_data, filter_settings)
+                
+    def apply_all_filters(self, update_color_limits=True):        
+        for filt in self.filters:
+            if filt.checkstate:
+                self.processed_data = filt.function(self.processed_data, 
+                                                    filt.method,
+                                                    filt.settings[0], 
+                                                    filt.settings[1])
         if update_color_limits:
             self.reset_view_settings()
-            if self.image:
+            if hasattr(self, 'image'):
                 self.apply_view_settings()
-            
-    def update_linecut(self):
-        if PRINT_FUNCTION_CALLS:
-            print('update_linecut')
-        if self.linecut_window.running:
-            try:
-                self.linecut.remove()
-                del self.linecut
-            except:
-                pass
-            if self.orientation == 'horizontal':
-                x = self.processed_data[0][:,self.selected_indices[1]]
-                y = self.processed_data[2][:,self.selected_indices[1]]
-                value = self.processed_data[1][0,self.selected_indices[1]]
-                self.linecut_window.xlabel = self.settings['xlabel']
-                self.linecut_window.zlabel = self.settings['ylabel']
-                self.linecut_window.title = self.settings['ylabel']+' = '+str(value)
-                self.linecut = self.axes.axhline(
-                        y=value, linestyle='dashed', linewidth=1, color=self.settings['linecolor'])
-            elif self.orientation == 'vertical':
-                x = self.processed_data[1][self.selected_indices[0],:]
-                y = self.processed_data[2][self.selected_indices[0],:]
-                value = self.processed_data[0][self.selected_indices[0],0]
-                self.linecut_window.xlabel = self.settings['ylabel']
-                self.linecut_window.zlabel = self.settings['xlabel']
-                self.linecut_window.title = self.settings['xlabel']+' = '+str(value)
-                self.linecut = self.axes.axvline(
-                        x=value, linestyle='dashed', linewidth=1, color=self.settings['linecolor'])
-            elif self.orientation == 'diagonal':
-                x0, y0 = self.list_points[0].x, self.list_points[0].y
-                x1, y1 = self.list_points[1].x, self.list_points[1].y
-                
-                l_x, l_y = self.processed_data[0].shape
-                x_min = np.amin(self.processed_data[0][:,0])
-                x_max = np.amax(self.processed_data[0][:,0])
-                y_min = np.amin(self.processed_data[1][0,:])
-                y_max = np.amax(self.processed_data[1][0,:])
-                    
-                i_x0 = (l_x-1)*(x0-x_min)/(x_max-x_min)
-                i_y0 = (l_y-1)*(y0-y_min)/(y_max-y_min)
-                i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
-                i_y1 = (l_y-1)*(y1-y_min)/(y_max-y_min)
-                
-                n = int(np.sqrt((i_x1-i_x0)**2+(i_y1-i_y0)**2))
-                x_diag, y_diag = np.linspace(i_x0, i_x1, n), np.linspace(i_y0, i_y1, n)
-                y = map_coordinates(self.processed_data[-1], np.vstack((x_diag, y_diag)))
-                x = map_coordinates(self.processed_data[0], np.vstack((x_diag, y_diag)))                
-                self.linecut_window.xlabel = self.settings['xlabel']
-                self.linecut_window.zlabel = ''
-                self.linecut_window.title = ''
-            elif self.orientation == 'circular':
-                x0, y0 = self.list_points[0].x, self.list_points[0].y
-                x1, y1 = self.list_points[1].x, self.list_points[2].y
-                                
-                l_x, l_y = self.processed_data[0].shape
-                x_min = np.amin(self.processed_data[0][:,0])
-                x_max = np.amax(self.processed_data[0][:,0])
-                y_min = np.amin(self.processed_data[1][0,:])
-                y_max = np.amax(self.processed_data[1][0,:])
-                
-                i_x0 = (l_x-1)*(x0-x_min)/(x_max-x_min)
-                i_y0 = (l_y-1)*(y0-y_min)/(y_max-y_min)
-                i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
-                i_y1 = (l_y-1)*(y1-y_min)/(y_max-y_min)
-                
-                n = int(8*np.sqrt((i_x0-i_x1)**2+(i_y0-i_y1)**2))
-                theta = np.linspace(0, 2*np.pi, n)
-                
-                i_x_circ = i_x0+(i_x1-i_x0)*np.cos(theta) 
-                i_y_circ = i_y0+(i_y1-i_y0)*np.sin(theta)
-                
-                y = map_coordinates(self.processed_data[-1], np.vstack((i_x_circ, i_y_circ)))
-                x = theta
-               
-                self.linecut_window.xlabel = 'Angle (rad)'
-                self.linecut_window.zlabel = ''
-                self.linecut_window.title = ''
-
-            self.linecut_window.ylabel = self.settings['clabel']
-            self.linecut_window.draw_plot(x, y)
-            self.linecut_window.show()
-    
-    def update_multiple_linecuts(self):
-        if PRINT_FUNCTION_CALLS:
-            print('update_multiple_linecuts')
-        if self.multi_orientation == 'horizontal':
-            self.multi_linecuts_window.xlabel = self.settings['xlabel']
-            self.multi_linecuts_window.zlabel = self.settings['ylabel']
-        elif self.multi_orientation == 'vertical':
-            self.multi_linecuts_window.xlabel = self.settings['ylabel']
-            self.multi_linecuts_window.zlabel = self.settings['xlabel']
-        self.multi_linecuts_window.orientation = self.multi_orientation
-        self.multi_linecuts_window.ylabel = self.settings['clabel']
-        self.multi_linecuts_window.title = ''
-        #self.multi_linecuts_window.data = self.processed_data
-        self.multi_linecuts_window.draw_plots()
-        self.multi_linecuts_window.show()
+       
+    def extension_setting_edited(self, editor, setting_name):
+        pass
         
+    def add_extension_actions(self, editor, menu):
+        pass
+    
+    def do_extension_actions(self, editor, menu):
+        pass
+        
+    def file_finished(self):
+        return False
+    
+    def hide_linecuts(self):
+        if hasattr(self, 'linecut_window'):
+            self.linecut_window.running = False
+        for line in reversed(self.axes.get_lines()):
+            line.remove()
+            del line
+        for patch in reversed(self.axes.patches):
+            patch.remove()
+            del patch
+        if hasattr(self, 'linecut_points'):
+            del self.linecut_points
+        self.canvas.draw()
+    
     def open_fft_window(self):
-        if PRINT_FUNCTION_CALLS:
-            print('open_fft_window')
         if self.fft_orientation == 'vertical':
             self.fft = np.fft.rfft(self.processed_data[-1], axis=1)
         elif self.fft_orientation == 'horizontal':
@@ -2644,179 +1630,232 @@ class Data:
         self.fft_window.show()
 
 
-class LineCutWindow(QtWidgets.QWidget):
-    def __init__(self, parent, multiple=False):
-        super(self.__class__, self).__init__()
-        if isinstance(parent, list):
-            self.parent = parent[0]
-            self.all_parents = parent
-            self.multiple_files = True
-        else:
-            self.parent = parent
-            self.multiple_files = False
-        self.setWindowTitle('Inspectra Gadget - Linecut Window')
-        self.multiple = multiple
-        self.running = True
-        self.resize(600, 600)
-        self.linewidth = self.parent.settings['linewidth']
-        self.vertical_layout = QtWidgets.QVBoxLayout()
-        self.button_layout = QtWidgets.QHBoxLayout()
-        self.top_button_layout = QtWidgets.QHBoxLayout()
-        self.figure = Figure(tight_layout={'pad':2})
-        self.axes = self.figure.add_subplot(111)
-        self.canvas = FigureCanvas(self.figure)
-        self.navi_toolbar = NavigationToolbar(self.canvas, self)
-        self.save_button = QtWidgets.QPushButton('Save Data')
-        self.save_button.clicked.connect(self.save_data)
-        self.save_image_button = QtWidgets.QPushButton('Save Image')
-        self.save_image_button.clicked.connect(self.save_image)
-        self.copy_image_button = QtWidgets.QPushButton('Copy Image')
-        self.copy_image_button.clicked.connect(self.copy_image)
-        self.orientation_button = QtWidgets.QPushButton('Hor./Vert.')
-        self.orientation_button.clicked.connect(self.change_orientation)
-        self.clear_button = QtWidgets.QPushButton('Clear')
-        self.clear_button.clicked.connect(self.clear_lines)
-        self.detect_peaks_button = QtWidgets.QPushButton('Detect Peaks')
-        self.detect_peaks_button.clicked.connect(self.detect_peaks)
-        if self.multiple_files == False:
-            self.top_button_layout.addWidget(self.save_button)
-        self.top_button_layout.addWidget(self.save_image_button)
-        self.top_button_layout.addWidget(self.copy_image_button)
-        self.top_button_layout.addWidget(self.orientation_button)
-        self.top_button_layout.addStretch()
-        if multiple:
-            self.init_multiple()
-            self.vertical_layout.addLayout(self.top_button_layout)
-            self.vertical_layout.addLayout(self.control_layout)
-        else:
-            self.vertical_layout.addLayout(self.top_button_layout)
-            self.canvas.mpl_connect('scroll_event', self.mouse_scroll_canvas)
-        self.vertical_layout.addWidget(self.canvas)
-        self.vertical_layout.addWidget(self.navi_toolbar)
-        self.button_layout.addStretch()
-        if self.multiple_files == False:
-            self.init_fit()
-        self.vertical_layout.addLayout(self.button_layout)
-        self.setLayout(self.vertical_layout)
-                
-    def init_multiple(self):
-        self.control_layout = QtWidgets.QHBoxLayout()
-        self.number_label = QtWidgets.QLabel('Number of lines:')
-        self.number_line_edit = QtWidgets.QLineEdit('5')
-        self.number_line_edit.setFixedSize(40,20)
-        self.number_line_edit.editingFinished.connect(self.draw_plots)
-        self.all_lines_button = QtWidgets.QPushButton('All')
-        self.all_lines_button.setFixedSize(35,22)
-        self.all_lines_button.clicked.connect(self.clicked_all_lines)
-        self.check_specify_lines = QtWidgets.QCheckBox('Specify lines:')
-        self.check_specify_lines.clicked.connect(self.draw_plots)
-        self.specify_lines_edit = QtWidgets.QLineEdit('')
-        self.specify_lines_edit.editingFinished.connect(self.draw_plots)
-        self.offset_label = QtWidgets.QLabel('Offset')
-        self.offset_line_edit = QtWidgets.QLineEdit('0')
-        self.offset_line_edit.setFixedSize(70,20)
-        self.offset_line_edit.editingFinished.connect(self.draw_plots)
-        self.check_legend = QtWidgets.QCheckBox('Legend')
-        self.check_legend.clicked.connect(self.draw_plots)
-        if self.multiple_files == False:
-            self.control_layout.addWidget(self.number_label)
-            self.control_layout.addWidget(self.number_line_edit)
-            self.control_layout.addWidget(self.all_lines_button)
-            self.control_layout.addWidget(self.check_specify_lines)
-            self.control_layout.addWidget(self.specify_lines_edit)
-            self.canvas.mpl_connect('button_press_event', self.mouse_click_canvas)
-        self.control_layout.addWidget(self.offset_label)
-        self.control_layout.addWidget(self.offset_line_edit)
-        self.control_layout.addWidget(self.check_legend)
-        self.cmaps = cmaps
-        self.colormap_box = QtWidgets.QComboBox()
-        self.colormap_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-        self.colormap_type_box = QtWidgets.QComboBox()
-        self.colormap_type_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)        
-        self.cmaps = cmaps
-        for cmap_type in self.cmaps:    
-            self.colormap_type_box.addItem(cmap_type)
-        self.colormap_box.addItems(list(self.cmaps.values())[0])
-        #self.control_layout.addStretch()
-        self.top_button_layout.addWidget(self.colormap_type_box)
-        self.top_button_layout.addWidget(self.colormap_box)
-        self.colormap_type_box.currentIndexChanged.connect(self.colormap_type_edited)
-        self.colormap_box.currentIndexChanged.connect(self.draw_plots)
-         
+class NumpyData(BaseClassData):
+    def __init__(self, filepath, canvas, dataset):
+        super().__init__(filepath, canvas)
+        self.dataset = dataset
+        self.label = self.dataset['Label']
+        for setting, value in self.dataset['Settings'].items():
+            if setting in self.settings:
+                self.settings[setting] = value        
+        self.filters = self.dataset['Filters']
+        self.view_settings = self.dataset['View Settings']       
+        self.raw_data = self.dataset['Raw Data']
+
+    def prepare_data_for_plot(self, reload_data=False):
+        self.copy_raw_to_processed_data()
+        self.apply_all_filters()
+
+
+class Filter:   
+    DEFAULT_SETTINGS = {'Derivative': {'Method': ['Mid'],
+                                       'Settings': ['0', '1'],
+                                       'Function': filters.derivative,
+                                       'Checkstate': 2},
+                        'Smoothen': {'Method': ['Gauss', 'Median'],
+                                     'Settings': ['0', '2'],
+                                     'Function': filters.smooth,
+                                     'Checkstate': 2},
+                        'Sav-Gol': {'Method': ['Y','X','dY','dX','ddY','ddX'],
+                                    'Settings': ['7', '2'],
+                                    'Function': filters.sav_gol,
+                                    'Checkstate': 2},                               
+                        'Crop X': {'Method': ['Abs', 'Rel', 'Lim'],
+                                   'Settings': ['-1', '1'],
+                                   'Function': filters.crop_x,
+                                   'Checkstate': 0},                              
+                        'Crop Y': {'Method': ['Abs', 'Rel', 'Lim'],
+                                   'Settings': ['-2', '2'],
+                                   'Function': filters.crop_y,
+                                   'Checkstate': 0},
+                        'Logarithm': {'Method': ['Mask','Shift','Abs'],
+                                      'Settings': ['', ''],
+                                      'Function': filters.logarithm,
+                                      'Checkstate': 2}, 
+                        'Root': {'Method': [''],
+                                 'Settings': ['2', ''],
+                                 'Function': filters.root,
+                                 'Checkstate': 2}, 
+                        'Offset': {'Method': ['X','Y','Z'],
+                                   'Settings': ['0', ''],
+                                   'Function': filters.offset,
+                                   'Checkstate': 0},               
+                        'Absolute': {'Method': [''],
+                                     'Settings': ['', ''],
+                                     'Function': filters.absolute,
+                                     'Checkstate': 2}, 
+                        'Multiply': {'Method': ['X','Y','Z'],
+                                     'Settings': ['1', ''],
+                                     'Function': filters.multiply,
+                                     'Checkstate': 2}, 
+                        'Divide': {'Method': ['X','Y','Z'],
+                                   'Settings': ['1', ''],
+                                   'Function': filters.divide,
+                                   'Checkstate': 0}, 
+                        'Roll X': {'Method': ['Index'],
+                                   'Settings': ['0', '0'],
+                                   'Function': filters.roll_x,
+                                   'Checkstate': 0},                             
+                        'Roll Y': {'Method': ['Index'],
+                                   'Settings': ['0', '0'],
+                                   'Function': filters.roll_y,
+                                   'Checkstate': 0}, 
+                        'Cut X': {'Method': ['Index'],
+                                  'Settings': ['0', '0'],
+                                  'Function': filters.cut_x,
+                                  'Checkstate': 0},                               
+                        'Cut Y': {'Method': ['Index'],
+                                  'Settings': ['0', '0'],
+                                  'Function': filters.cut_y,
+                                  'Checkstate': 0},                                
+                        'Swap XY': {'Method': [''],
+                                    'Settings': ['', ''],
+                                    'Function': filters.swap_xy,
+                                    'Checkstate': 2}, 
+                        'Flip': {'Method': ['L-R','U-D'],
+                                 'Settings': ['', ''],
+                                 'Function': filters.flip,
+                                 'Checkstate': 2}, 
+                        'Normalize': {'Method': ['Max', 'Min', 'Point'],
+                                      'Settings': ['', ''],
+                                      'Function': filters.normalize,
+                                      'Checkstate': 0},                
+                        'Slope': {'Method': [''],
+                                  'Settings': ['0', '-1'],
+                                  'Function': filters.add_slope,
+                                  'Checkstate': 0}, 
+                        'Interp': {'Method': ['linear','cubic','quintic'],
+                                   'Settings': ['800', '600'],
+                                   'Function': filters.interpolate,
+                                   'Checkstate': 0},
+                        'Subtract': {'Method': ['Ver', 'Hor'],
+                                     'Settings': ['0', ''],
+                                     'Function': filters.subtract_trace,
+                                     'Checkstate': 0}, 
+                        'Invert': {'Method': ['X','Y','Z'],
+                                   'Settings': ['', ''],
+                                   'Function': filters.invert,
+                                   'Checkstate': 0}} 
     
-    def init_fit(self):
-        self.fit_layout = QtWidgets.QHBoxLayout()
-        self.manual_box = QtWidgets.QCheckBox('Manual inital guess')
+    def __init__(self, name, method=None, settings=None, checkstate=None):
+        self.name = name
+        default_settings = self.DEFAULT_SETTINGS.copy()
+        self.method_list = default_settings[name]['Method']
+        if method:
+            self.method = method
+        else:
+            self.method = self.method_list[0]
+        if settings:
+            self.settings = settings
+        else:
+            self.settings = default_settings[name]['Settings']
+        if checkstate:
+            self.checkstate = checkstate
+        else:
+            self.checkstate = default_settings[name]['Checkstate']
+        self.function = default_settings[name]['Function']
+        
+
+class LineCutWindow(QtWidgets.QWidget):
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+        self.running = True
+        self.init_widgets()
+        self.init_canvas()
+        self.init_connections()
+        self.init_layouts()
+        self.set_main_layout()
+        
+    def init_widgets(self):
+        self.setWindowTitle('Inspectra Gadget - Linecut Window')
+        self.resize(600, 600)
+        self.save_button = QtWidgets.QPushButton('Save Data')
+        self.save_image_button = QtWidgets.QPushButton('Save Image')
+        self.copy_image_button = QtWidgets.QPushButton('Copy Image')
+        self.orientation_button = QtWidgets.QPushButton('Hor./Vert.')
+        self.clear_button = QtWidgets.QPushButton('Clear')
+        self.fit_button = QtWidgets.QPushButton('Fit')
+        self.guess_checkbox = QtWidgets.QCheckBox('Initial guess')
         self.guess_edit = QtWidgets.QLineEdit()
         self.fit_box = QtWidgets.QComboBox()
         self.fit_box.addItems(fits.get_names())
-        self.fit_box.setCurrentIndex(0)
-        self.fit_box.currentIndexChanged.connect(self.fit_type_changed)
+        self.fit_box.setCurrentIndex(0)        
         self.pars_label = QtWidgets.QLabel(fits.get_names(parameters=self.fit_box.currentText()))
-        self.fit_button = QtWidgets.QPushButton('Fit')
+        
+    def init_connections(self):
+        self.save_button.clicked.connect(self.save_data)
+        self.save_image_button.clicked.connect(self.save_image)
+        self.copy_image_button.clicked.connect(self.copy_image)
+        self.orientation_button.clicked.connect(self.change_orientation)
+        self.clear_button.clicked.connect(self.clear_lines)
+        self.fit_box.currentIndexChanged.connect(self.fit_type_changed)
         self.fit_button.clicked.connect(self.start_fitting)
+        
+    def init_canvas(self):
+        self.figure = Figure(tight_layout={'pad':2})
+        self.axes = self.figure.add_subplot(111)
+        self.canvas = FigureCanvas(self.figure)
+        self.scroll_event_id = self.canvas.mpl_connect('scroll_event', 
+                                                       self.mouse_scroll_canvas)
+        self.navi_toolbar = NavigationToolbar(self.canvas, self)        
+    
+    def init_layouts(self):
+        self.top_buttons_layout = QtWidgets.QHBoxLayout()
+        self.fit_layout = QtWidgets.QHBoxLayout()
+        self.bottom_buttons_layout = QtWidgets.QHBoxLayout()
+        self.main_layout = QtWidgets.QVBoxLayout()
+        
+        self.top_buttons_layout.addWidget(self.save_button)
+        self.top_buttons_layout.addWidget(self.save_image_button)
+        self.top_buttons_layout.addWidget(self.copy_image_button)
+        self.top_buttons_layout.addWidget(self.orientation_button)
+        self.top_buttons_layout.addStretch()
+        
+        self.bottom_buttons_layout.addStretch()
+        self.bottom_buttons_layout.addWidget(self.fit_button)
+        self.bottom_buttons_layout.addWidget(self.clear_button)        
+
         self.fit_layout.addStretch()
-        self.fit_layout.addWidget(self.manual_box)
+        self.fit_layout.addWidget(self.guess_checkbox)
         self.fit_layout.addWidget(self.guess_edit)
         self.fit_layout.addWidget(self.pars_label) 
-        self.fit_layout.addWidget(self.fit_box)              
-        self.vertical_layout.addLayout(self.fit_layout)
-        if self.multiple and lmfit_imported:
-            self.reverse_checkbox = QtWidgets.QCheckBox('Reverse Fit Order')
-            self.reverse_checkbox.setCheckState(QtCore.Qt.Checked)
-            self.button_layout.addWidget(self.reverse_checkbox)
-            self.button_layout.addWidget(self.detect_peaks_button)
-        self.button_layout.addWidget(self.fit_button)
-        self.button_layout.addWidget(self.clear_button)
-        self.peak_estimates = []
-    
-    def mouse_click_canvas(self, event):
-        if self.navi_toolbar.mode == '':
-            if event.inaxes and lmfit_imported:
-                x = event.xdata                
-                if event.button == 1:
-                    self.peak_estimates.append(self.axes.axvline(x, linestyle='dashed'))
-                    self.canvas.draw()
-                elif event.button == 3:
-                    if self.peak_estimates:
-                        # Remove peak closest to right-click
-                        peak_index = np.argmin(np.array([np.abs(p.get_xdata()[0]-x) for p in self.peak_estimates]))
-                        self.peak_estimates[peak_index].remove()
-                        del self.peak_estimates[peak_index]
-                        self.canvas.draw()
+        self.fit_layout.addWidget(self.fit_box)
+
+    def set_main_layout(self):
+        self.main_layout.addLayout(self.top_buttons_layout)
+        self.main_layout.addWidget(self.canvas)
+        self.main_layout.addWidget(self.navi_toolbar)
+        self.main_layout.addLayout(self.fit_layout)
+        self.main_layout.addLayout(self.bottom_buttons_layout)
+        self.setLayout(self.main_layout)        
              
     def change_orientation(self):
-        if self.multiple:
-            if self.parent.multi_orientation == 'horizontal':
-                self.parent.multi_orientation = 'vertical'
-            elif self.parent.multi_orientation == 'vertical':
-                self.parent.multi_orientation = 'horizontal'
-            self.parent.update_multiple_linecuts()
-        else:
-            if self.parent.orientation == 'horizontal':
-                self.parent.orientation = 'vertical'
-            elif self.parent.orientation == 'vertical':
-                self.parent.orientation = 'horizontal'
-            self.parent.update_linecut()
+        if self.orientation == 'horizontal':
+            self.orientation = 'vertical'
+        elif self.orientation == 'vertical':
+            self.orientation = 'horizontal'
+        self.update()
+  
+    def update(self):
+        if self.running:
+            try:
+                self.parent.linecut.remove()
+                del self.parent.linecut
+            except:
+                pass
+            self.ylabel = self.parent.settings['clabel']
+            self.draw_plot()
             self.parent.canvas.draw()
-             
+            self.show()
+               
     def clear_lines(self):
         for line in reversed(self.axes.get_lines()):
             if line.get_linestyle() == '--':
                 line.remove()
                 del line
-        self.canvas.draw()
-        self.peak_estimates = []
-    
-    def detect_peaks(self):
-        self.clear_lines()
-        if self.reverse_checkbox.checkState() == 2: 
-            index_trace = np.argmax(self.z[:,0])
-        else:
-            index_trace = np.argmin(self.z[:,0])
-        peaks, _ = find_peaks(self.y[index_trace,:], width=5)
-        for peak in peaks:
-            self.peak_estimates.append(self.axes.axvline(self.x[index_trace,peak], linestyle='dashed'))
+        if hasattr(self, 'peak_estimates'):
+            self.peak_estimates = []
         self.canvas.draw()
     
     def fit_type_changed(self):
@@ -2824,53 +1863,311 @@ class LineCutWindow(QtWidgets.QWidget):
     
     def start_fitting(self):
         function_name = self.fit_box.currentText()
-        if len(self.peak_estimates) > 1:
+        self.y_fit = np.copy(self.y)
+        if self.guess_checkbox.checkState():
+            p0 = None
+        else:
+            p0 = [float(par) for par in self.guess_edit.text().split()]
+        try:
+            self.fit_parameters = fits.fit_data(function_name=function_name, xdata=self.x, 
+                                                ydata=self.y, p0=p0)
+            self.y_fit = fits.get_function(function_name)(self.x, *self.fit_parameters)
+        except RuntimeError:
+            print('Curve could not be fitted...')
+            self.fit_parameters = [np.nan]*len(fits.get_names(function_name).split(','))
+            self.y_fit = np.nan            
+        self.draw_plot()
+        self.draw_fits()
+        self.plot_parameters()
+           
+    def plot_parameters(self):
+        self.axes.text(0.02,0.95,f'Position: {self.fit_parameters[2]:.4g}', 
+                       transform=self.axes.transAxes)
+        self.axes.text(0.02,0.9,f'Height: {self.fit_parameters[1]:.4g}', 
+                       transform=self.axes.transAxes)
+        self.axes.text(0.02,0.85,f'Width: {self.fit_parameters[0]:.4g}', 
+                       transform=self.axes.transAxes)
+        self.axes.text(0.02,0.8,f'Background: {self.fit_parameters[3]:.4g}', 
+                       transform=self.axes.transAxes)
+        self.canvas.draw()
+         
+    def draw_plot(self):
+        self.running = True
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+        
+        if self.orientation == 'horizontal':
+            self.x = self.parent.processed_data[0][:,self.parent.selected_indices[1]]
+            self.y = self.parent.processed_data[2][:,self.parent.selected_indices[1]]
+            self.z = self.parent.processed_data[1][0,self.parent.selected_indices[1]]
+            self.xlabel = self.parent.settings['xlabel']
+            self.title = f'{self.parent.settings["ylabel"]} = {self.z}'
+            self.parent.linecut = self.parent.axes.axhline(y=self.z, linestyle='dashed', linewidth=1, 
+                                                           color=self.parent.settings['linecolor'])
+        elif self.orientation == 'vertical':
+            self.x = self.parent.processed_data[1][self.parent.selected_indices[0],:]
+            self.y = self.parent.processed_data[2][self.parent.selected_indices[0],:]
+            self.z = self.parent.processed_data[0][self.parent.selected_indices[0],0]
+            self.xlabel = self.parent.settings['ylabel']
+            self.title = f'{self.parent.settings["xlabel"]} = {self.z}'
+            self.parent.linecut = self.parent.axes.axvline(x=self.z, linestyle='dashed', linewidth=1, 
+                                                           color=self.parent.settings['linecolor'])
+        elif self.orientation == 'diagonal' or self.orientation == 'circular':
+            x0 = self.parent.linecut_points[0].x 
+            y0 = self.parent.linecut_points[0].y
+            x1 = self.parent.linecut_points[1].x 
+            y1 = self.parent.linecut_points[1].y                
+            l_x, l_y = self.parent.processed_data[0].shape
+            x_min = np.amin(self.parent.processed_data[0][:,0])
+            x_max = np.amax(self.parent.processed_data[0][:,0])
+            y_min = np.amin(self.parent.processed_data[1][0,:])
+            y_max = np.amax(self.parent.processed_data[1][0,:])
+            i_x0 = (l_x-1)*(x0-x_min)/(x_max-x_min)
+            i_y0 = (l_y-1)*(y0-y_min)/(y_max-y_min)
+            i_x1 = (l_x-1)*(x1-x_min)/(x_max-x_min)
+            i_y1 = (l_y-1)*(y1-y_min)/(y_max-y_min)
+            if self.orientation == 'diagonal':
+                n = int(np.sqrt((i_x1-i_x0)**2+(i_y1-i_y0)**2))
+                x_diag = np.linspace(i_x0, i_x1, n), 
+                y_diag = np.linspace(i_y0, i_y1, n)
+                self.y = map_coordinates(self.parent.processed_data[-1], 
+                                         np.vstack((x_diag, y_diag)))
+                self.x = map_coordinates(self.parent.processed_data[0], 
+                                         np.vstack((x_diag, y_diag)))                
+                self.xlabel = self.parent.settings['xlabel']
+            elif self.orientation == 'circular':
+                n = int(8*np.sqrt((i_x0-i_x1)**2+(i_y0-i_y1)**2))
+                theta = np.linspace(0, 2*np.pi, n)
+                i_x_circ = i_x0+(i_x1-i_x0)*np.cos(theta) 
+                i_y_circ = i_y0+(i_y1-i_y0)*np.sin(theta)
+                self.y = map_coordinates(self.parent.processed_data[-1], 
+                                         np.vstack((i_x_circ, i_y_circ)))
+                self.x = theta
+                self.xlabel = 'Angle (rad)'
+            self.title = ''
+        self.ylabel = self.parent.settings['clabel']
+        self.image = self.axes.plot(self.x, self.y, linewidth=self.parent.settings['linewidth'])
+        self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
+        self.axes.set_xlabel(self.xlabel, size='xx-large')
+        self.axes.set_ylabel(self.ylabel, size='xx-large')
+        self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
+        self.axes.set_title(self.title, size='x-large')
+        self.canvas.draw()
+        self.parent.canvas.draw()
+              
+    def draw_fits(self):
+        self.axes.plot(self.x, self.y_fit, 'k--', 
+                       linewidth=self.parent.settings['linewidth'])            
+        self.canvas.draw()
+        
+    def closeEvent(self, event):
+        self.parent.hide_linecuts()
+        self.running = False
+        
+    def save_data(self):
+        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'Save Data As...')
+        data = np.array([self.x, self.y])
+        np.savetxt(filename, data.T)
+        
+    def save_image(self):
+        formats = 'Portable Network Graphic (*.png);;Adobe Acrobat (*.pdf)'
+        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'Save Figure As...', '', formats)
+        if filename:
+            print('Save Figure as '+filename+' ...')
+            if DARK_THEME and qdarkstyle_imported:
+                rcParams_to_light_theme()
+                self.update()
+            self.figure.savefig(filename)
+            if DARK_THEME and qdarkstyle_imported:
+                rcParams_to_dark_theme()
+                self.update()
+            print('Saved!')
+    
+    def copy_image(self):
+        self.cursor.horizOn = False
+        self.cursor.vertOn = False            
+        self.canvas.draw()
+        if DARK_THEME and qdarkstyle_imported:
+            rcParams_to_light_theme()
+            self.parent.update()           
+        buf = io.BytesIO()
+        self.figure.savefig(buf, dpi=300, transparent=True, bbox_inches='tight')
+        QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
+        buf.close()
+        self.cursor.horizOn = True
+        self.cursor.vertOn = True                       
+        self.canvas.draw()
+        if DARK_THEME and qdarkstyle_imported:
+            rcParams_to_dark_theme()
+            self.update() 
+            
+    def mouse_scroll_canvas(self, event):
+        if event.inaxes:
+            data_shape = self.parent.processed_data[0].shape
+            if self.orientation == 'horizontal':
+                new_index = self.parent.selected_indices[1]+int(event.step)
+                if new_index >= 0 and new_index < data_shape[1]:
+                    self.parent.selected_indices[1] = new_index
+            elif self.orientation == 'vertical':
+                new_index = self.parent.selected_indices[0]+int(event.step)
+                if new_index >= 0 and new_index < data_shape[0]:
+                    self.parent.selected_indices[0] = new_index
+            self.update()
+            self.parent.canvas.draw()
+  
+            
+class MultiPlotWindow(LineCutWindow):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle('Inspectra Gadget - Multiplot Window')
+ 
+    def init_widgets(self):
+        super().init_widgets()
+        self.colormap_box = QtWidgets.QComboBox()
+        self.colormap_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.colormap_type_box = QtWidgets.QComboBox()
+        self.colormap_type_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)  
+        for cmap_type in cmaps:    
+            self.colormap_type_box.addItem(cmap_type)
+        self.colormap_box.addItems(list(cmaps.values())[0])
+        
+        self.offset_label = QtWidgets.QLabel('Offset')
+        self.offset_line_edit = QtWidgets.QLineEdit('0')
+        self.offset_line_edit.setFixedSize(70,20)
+        self.check_legend = QtWidgets.QCheckBox('Legend')
+
+        self.reverse_checkbox = QtWidgets.QCheckBox('Reverse Fit Order')
+        self.reverse_checkbox.setCheckState(QtCore.Qt.Checked)
+        self.detect_peaks_button = QtWidgets.QPushButton('Detect Peaks')
+
+    def init_connections(self):
+        super().init_connections()
+        self.colormap_type_box.currentIndexChanged.connect(self.colormap_type_edited)
+        self.colormap_box.currentIndexChanged.connect(self.draw_plot)
+        self.offset_line_edit.editingFinished.connect(self.draw_plot)
+        self.check_legend.clicked.connect(self.draw_plot)
+        self.detect_peaks_button.clicked.connect(self.detect_peaks)
+        
+    def init_canvas(self):
+        super().init_canvas()
+        self.canvas.mpl_disconnect(self.scroll_event_id) 
+        self.canvas.mpl_connect('button_press_event', self.mouse_click_canvas)
+               
+    def init_layouts(self):
+        super().init_layouts()
+        
+        self.top_buttons_layout.addWidget(self.colormap_type_box)
+        self.top_buttons_layout.addWidget(self.colormap_box)
+        
+        self.lines_layout = QtWidgets.QHBoxLayout()
+        self.lines_layout.addStretch()
+        self.lines_layout.addWidget(self.offset_label)
+        self.lines_layout.addWidget(self.offset_line_edit)
+        self.lines_layout.addWidget(self.check_legend)
+        
+        self.bottom_buttons_layout.addWidget(self.detect_peaks_button)
+        self.bottom_buttons_layout.addWidget(self.reverse_checkbox)
+    
+    def set_main_layout(self):
+        self.main_layout.addLayout(self.top_buttons_layout)
+        self.main_layout.addLayout(self.lines_layout)
+        self.main_layout.addWidget(self.canvas)
+        self.main_layout.addWidget(self.navi_toolbar)
+        self.main_layout.addLayout(self.fit_layout)
+        self.main_layout.addLayout(self.bottom_buttons_layout)
+        self.setLayout(self.main_layout)
+    
+    def mouse_click_canvas(self, event):
+        if self.navi_toolbar.mode == '':
+            if event.inaxes and lmfit_imported:
+                x = event.xdata                
+                if event.button == 1:
+                    if not hasattr(self, 'peak_estimates'):
+                        self.peak_estimates = []
+                    self.peak_estimates.append(self.axes.axvline(x, linestyle='dashed'))
+                    self.canvas.draw()
+                elif event.button == 3:
+                    if hasattr(self, 'peak_estimates') and self.peak_estimates:
+                        # Remove peak closest to right-click
+                        peak_index = np.argmin(np.array([np.abs(p.get_xdata()[0]-x) for p in self.peak_estimates]))
+                        self.peak_estimates[peak_index].remove()
+                        del self.peak_estimates[peak_index]
+                        self.canvas.draw()
+    
+    def update(self):
+        self.draw_plot()
+        self.show()
+        
+    def closeEvent(self, event):
+        self.running = False
+    
+    def detect_peaks(self):
+        self.clear_lines()
+        if self.reverse_checkbox.checkState(): 
+            index_trace = np.argmax(self.z)
+        else:
+            index_trace = np.argmin(self.z)
+        peaks, _ = find_peaks(self.y[index_trace], width=5)
+        if not hasattr(self, 'peak_estimates'):
+            self.peak_estimates = []
+        for peak in peaks:
+            self.peak_estimates.append(self.axes.axvline(self.x[index_trace][peak], 
+                                                         linestyle='dashed'))
+        self.canvas.draw()
+    
+    def start_fitting(self):
+        function_name = self.fit_box.currentText()
+        if hasattr(self, 'peak_estimates') and len(self.peak_estimates) > 0:
             center_estimates = [p.get_xdata()[0] for p in self.peak_estimates]
             n_peaks = len(center_estimates)
             self.clear_lines()
-            line_indices = list(range(self.z.shape[0]))
-            if np.argmin(self.z[:,0]) == 0 and self.reverse_checkbox.checkState() == 2:  
+            line_indices = list(range(len(self.z)))
+            if np.argmin(self.z) == 0 and self.reverse_checkbox.checkState():  
                 line_indices.reverse()
-            elif np.argmax(self.z[:,0]) == 0 and self.reverse_checkbox.checkState() == 0: 
+            elif np.argmax(self.z) == 0 and not self.reverse_checkbox.checkState(): 
                 line_indices.reverse()
             
             # Initialize objects
             values = None
-            peak_values = {}
-            peak_values['background_constant'] = []
-            peak_values['mean_height'] = []
-            peak_values['mean_fwhm'] = []
-            peak_values['coordinates'] = self.z[line_indices,0]
+            self.peak_values = {}
+            self.peak_values['background_constant'] = []
+            self.peak_values['mean_height'] = []
+            self.peak_values['mean_fwhm'] = []
+            self.peak_values['coordinates'] = self.z[line_indices]
             for i in range(len(center_estimates)):
-                peak_values['p{}_center'.format(i)] = [] 
-                peak_values['p{}_height'.format(i)] = [] 
-                peak_values['p{}_fwhm'.format(i)] = []
+                self.peak_values[f'p{i}_center'] = [] 
+                self.peak_values[f'p{i}_height'] = [] 
+                self.peak_values[f'p{i}_fwhm'] = []
 
             # Fit routine for every trace
             for counter, line_index in enumerate(line_indices):
-                x, y, z = self.x[line_index,:], self.y[line_index,:], self.z[line_index,0]
-                print('Fitting peaks for trace; index = {}, value = {}...'.format(line_index, z))
+                x, y, z = self.x[line_index], self.y[line_index], self.z[line_index]
+                print(f'Fitting peaks; index = {line_index}, value = {z}...')
                 if counter == 0:
                     background_estimate = np.amin(y)
                     height_estimate = np.amax(y) - np.amin(y)
-                    fwhm_estimate = 0.25*min([abs(center_estimates[0]-c_est) for c_est in center_estimates[1:]])
+                    fwhm_estimate = 0.1*(np.amax(x)-np.amin(x))
                     if function_name == 'Lorentzian':
                         sigma_estimate = fwhm_estimate/2
                         amplitude_estimate = height_estimate*sigma_estimate*np.pi
                     else: # Gaussian
                         sigma_estimate = fwhm_estimate/2.35482
                         amplitude_estimate = height_estimate*sigma_estimate*np.sqrt(2*np.pi)
-                    peak_bounds = (np.amin(x)-0.5*(np.amax(x)-np.amin(x)), np.amax(x)+0.5*(np.amax(x)-np.amin(x)))
+                    peak_bounds = (np.amin(x)-0.5*(np.amax(x)-np.amin(x)), 
+                                   np.amax(x)+0.5*(np.amax(x)-np.amin(x)))
                 else:
                     background_estimate = values['bkg_c']
                     sigma_estimate = values['p0_sigma']
                     amplitude_estimate = values['p0_amplitude']
-                    center_estimates = [values['p{}_center'.format(i)] for i in range(len(center_estimates))]
+                    center_estimates = [values[f'p{i}_center'] for i 
+                                        in range(len(center_estimates))]
                 model = ConstantModel(prefix='bkg_')
                 params = model.make_params()
                 params['bkg_c'].set(background_estimate, min=-np.inf)
                 for i, center_estimate in enumerate(center_estimates):
-                    peak, pars = self.add_peak('p{}_'.format(i), function_name, 
+                    peak, pars = self.add_peak(f'p{i}_', function_name, 
                                                center_estimate, peak_bounds, 
                                                amplitude_estimate, sigma_estimate)
                     model = model + peak
@@ -2880,82 +2177,68 @@ class LineCutWindow(QtWidgets.QWidget):
                 print('Fit finished...')
                 
                 # Save fit values in dictionary
-                peak_values['background_constant'].append(values['bkg_c'])
+                self.peak_values['background_constant'].append(values['bkg_c'])
                 for i in range(n_peaks):
-                    peak_values['p{}_center'.format(i)].append(values['p{}_center'.format(i)])
+                    self.peak_values[f'p{i}_center'].append(values[f'p{i}_center'])
                     if function_name == 'Lorentzian':    
-                        best_fwhm = 2*values['p{}_sigma'.format(i)]
-                        best_height = values['p{}_amplitude'.format(i)]/(np.pi*values['p{}_sigma'.format(i)])
+                        best_fwhm = 2*values[f'p{i}_sigma']
+                        best_height = (values[f'p{i}_amplitude']/
+                                       (np.pi*values[f'p{i}_sigma']))
                     else:
-                        best_fwhm = 2.35482*values['p{}_sigma'.format(i)]
-                        best_height = values['p{}_amplitude'.format(i)]/(np.sqrt(2*np.pi)*values['p{}_sigma'.format(i)])
-                    peak_values['p{}_height'.format(i)].append(best_height)
-                    peak_values['p{}_fwhm'.format(i)].append(best_fwhm)
+                        best_fwhm = 2.35482*values[f'p{i}_sigma']
+                        best_height = (values[f'p{i}_amplitude']/
+                                       (np.sqrt(2*np.pi)*values[f'p{i}_sigma']))
+                    self.peak_values[f'p{i}_height'].append(best_height)
+                    self.peak_values[f'p{i}_fwhm'].append(best_fwhm)
                 self.axes.plot(x, result.best_fit+line_index*self.offset, 'k--')
             self.canvas.draw()
             
-            # Plot peak center positions as dots in main canvas
-            for i in range(n_peaks):
-                if self.orientation == 'vertical':
-                    self.parent.axes.scatter(self.z[line_indices,0], peak_values['p{}_center'.format(i)], c='r')
-                elif self.orientation == 'horizontal':
-                    self.parent.axes.scatter(peak_values['p{}_center'.format(i)], self.z[line_indices,0], c='r')
-            self.parent.canvas.draw()
-            
+            if not isinstance(self.parent, list):  
+                # Plot peak center positions as dots in main canvas
+                for i in range(n_peaks):
+                    if self.orientation == 'vertical':
+                        self.parent.axes.scatter(self.z[line_indices], 
+                                                 self.peak_values[f'p{i}_center'], c='r')
+                    elif self.orientation == 'horizontal':
+                        self.parent.axes.scatter(self.peak_values[f'p{i}_center'], 
+                                                 self.z[line_indices], c='r')
+                self.parent.canvas.draw()
+                
             # Calculate properties of peaks
-            peak_values['mean_height'] = [np.mean([peak_values['p{}_height'.format(i)][j] 
-                                                   for i in range(n_peaks)]) for j in range(self.number)]
-            peak_values['mean_fwhm'] = [np.mean([peak_values['p{}_fwhm'.format(i)][j] 
-                                                 for i in range(n_peaks)]) for j in range(self.number)]
-            for index, parity in enumerate(['even','odd']):
-                peak_values['mean_spacing_'+parity] = [np.mean([np.abs(peak_values['p{}_center'.format(i)][j] - 
-                                                                       peak_values['p{}_center'.format(i+1)][j]) 
-                                                                for i in range(index,n_peaks-1,2)]) for j in range(self.number)]
-                peak_values['mean_height_'+parity] = [np.mean([peak_values['p{}_height'.format(i)][j] 
-                                                               for i in range(index,n_peaks,2)]) for j in range(self.number)]
-                peak_values['mean_fwhm_'+parity] = [np.mean([peak_values['p{}_fwhm'.format(i)][j] 
-                                                             for i in range(index,n_peaks,2)]) for j in range(self.number)]
+            if len(self.peak_estimates) > 1:
+                self.peak_values['mean_height'] = [np.mean([self.peak_values[f'p{i}_height'][j] 
+                                                            for i in range(n_peaks)]) 
+                                                   for j in range(len(line_indices))]
+                self.peak_values['mean_fwhm'] = [np.mean([self.peak_values[f'p{i}_fwhm'][j] 
+                                                          for i in range(n_peaks)]) 
+                                                 for j in range(len(line_indices))]
+                for index, parity in enumerate(['even','odd']):
+                    self.peak_values['mean_spacing_'+parity] = [np.mean([np.abs(self.peak_values[f'p{i}_center'][j] - 
+                                                                                self.peak_values[f'p{i+1}_center'][j]) 
+                                                                         for i in range(index,n_peaks-1,2)]) 
+                                                            for j in range(len(line_indices))]
+                    self.peak_values['mean_height_'+parity] = [np.mean([self.peak_values[f'p{i}_height'][j] 
+                                                                        for i in range(index,n_peaks,2)]) 
+                                                               for j in range(len(line_indices))]
+                    self.peak_values['mean_fwhm_'+parity] = [np.mean([self.peak_values[f'p{i}_fwhm'][j] 
+                                                                      for i in range(index,n_peaks,2)]) 
+                                                             for j in range(len(line_indices))]
 
             # Save dictionary with peak properties to file    
             filename, _ = QtWidgets.QFileDialog.getSaveFileName(
-                    self, 'Peak Fitting Data As...', os.path.splitext(self.parent.filepath)[0]+'_fitdata', '*.npy')
+                    self, 'Save peak-fitting data as...', 'fitdata', '*.npy')
             if filename:
-                np.save(filename, peak_values)
-                print('Pead fitting data saved!')
-        else: 
-            self.y_fit = np.copy(self.y)
-            if self.manual_box.checkState():
-                p0 = None
-            else:
-                p0 = [float(par) for par in self.guess_edit.text().split()]
-            if self.multiple:
-                self.fit_parameters = []
-                for index in range(int(self.number_line_edit.text())):
-                    try:
-                        popt = fits.fit_data(function_name=function_name, xdata=self.x[index], 
-                                             ydata=self.y[index], p0=p0)
-                        self.fit_parameters.append(list(popt))
-                        self.y_fit[index] = fits.get_function(function_name)(self.x[index], *popt)
-                    except RuntimeError:
-                        print('Curve with index '+str(index)+' could not be fitted...')
-                        nans = [np.nan]*len(fits.get_names(function_name).split(','))
-                        self.fit_parameters.append(nans)
-                        self.y_fit[index] = np.nan
-            else:
-                try:
-                    self.fit_parameters = fits.fit_data(function_name=function_name, xdata=self.x, 
-                                                        ydata=self.y, p0=p0)
-                    self.y_fit = fits.get_function(function_name)(self.x, *self.fit_parameters)
-                except RuntimeError:
-                    print('Curve could not be fitted...')
-                    self.fit_parameters = [np.nan]*len(fits.get_names(function_name).split(','))
-                    self.y_fit = np.nan            
-            if self.multiple:
-                self.draw_plots()
-            else:
-                self.draw_plot(self.x, self.y)
-            self.draw_fits()
-            self.plot_parameters()
+                np.save(filename, self.peak_values)
+                print('Peak fitting data saved!')
+                
+            
+            self.parameter_windows = [] 
+            for key in self.peak_values.keys():
+                if len(self.z[line_indices]) == len(self.peak_values[key]):
+                    self.parameter_windows.append(ParameterWindow(self.z[line_indices], 
+                                                                  self.peak_values[key], 
+                                                                  self.zlabel, key))
+                    self.parameter_windows[-1].show()
         
     def add_peak(self, prefix, shape, center, bounds, amplitude, sigma):
         if shape == "Lorentzian":
@@ -2967,128 +2250,176 @@ class LineCutWindow(QtWidgets.QWidget):
         pars[prefix + 'amplitude'].set(amplitude, min=0)
         pars[prefix + 'sigma'].set(sigma, min=0)
         return peak, pars
-        
-    def plot_parameters(self):
-        if self.multiple:
-            self.pfit = np.array(self.fit_parameters).transpose()
-            rows, cols = self.pfit.shape
-            self.pars_window = []
-            for index in range(rows):
-                ylabel = fits.get_names(self.fit_box.currentText()).split(',')[index]
-                self.pars_window.append(ParametersWindow(
-                        self.z[:,0], self.pfit[index], self.zlabel, ylabel))
-                self.pars_window[-1].show()
-        else:
-            self.axes.text(0.02,0.95,'Position: %.4g' % self.fit_parameters[2], transform=self.axes.transAxes)
-            self.axes.text(0.02,0.9,'Height: %.4g' % self.fit_parameters[1], transform=self.axes.transAxes)
-            self.axes.text(0.02,0.85,'Width: %.4g' % self.fit_parameters[0], transform=self.axes.transAxes)
-            self.axes.text(0.02,0.8,'Background: %.4g' % self.fit_parameters[3], transform=self.axes.transAxes)
-            self.canvas.draw()
     
     def colormap_type_edited(self):
-        self.colormap_box.currentIndexChanged.disconnect(self.draw_plots)
+        self.colormap_box.currentIndexChanged.disconnect(self.draw_plot)
         self.colormap_box.clear()
-        self.colormap_box.addItems(self.cmaps[self.colormap_type_box.currentText()])
-        self.colormap_box.currentIndexChanged.connect(self.draw_plots)
-        self.draw_plots()
+        self.colormap_box.addItems(cmaps[self.colormap_type_box.currentText()])
+        self.colormap_box.currentIndexChanged.connect(self.draw_plot)
+        self.draw_plot()
          
-    def draw_plot(self, x, y):
-        self.running = True
-        self.x, self.y = x, y
-        self.figure.clear()
-        self.axes = self.figure.add_subplot(111)
-        self.image = self.axes.plot(x, y, linewidth=self.linewidth)
-        self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
-        self.apply_plot_settings()
-
-    def draw_plots(self):
+    def draw_plot(self):
         self.running = True
         self.figure.clear()
         self.axes = self.figure.add_subplot(111)
         try:
             self.offset = float(self.offset_line_edit.text())
-        except:
+        except Exception as e:
+            print('Invalid offset value!', e)
+            self.offset = 0
+            self.offset_line_edit.setText('0')
+        selected_colormap = cm.get_cmap(self.colormap_box.currentText())
+        line_colors = selected_colormap(np.linspace(0.1,0.9,len(self.parent)))
+        self.x, self.y = [], []
+        self.z = np.arange(len(self.parent))
+        for index, data in enumerate(self.parent):
+            x, y = data.processed_data[0], data.processed_data[1]
+            self.axes.plot(x, y+index*self.offset, 
+                           color=line_colors[index], 
+                           linewidth=data.settings['linewidth'], 
+                           label=f'{data.label}')
+            self.x.append(x)
+            self.y.append(y)
+        if self.check_legend.checkState():
+            self.axes.legend()
+        self.cursor = Cursor(self.axes, useblit=True, 
+                             color='grey', linewidth=0.5)
+        self.xlabel = data.settings['xlabel']
+        self.ylabel = data.settings['ylabel']
+        self.zlabel = ''
+        self.axes.set_xlabel(self.xlabel, size='xx-large')
+        self.axes.set_ylabel(self.ylabel, size='xx-large')
+        self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
+        self.canvas.draw()
+           
+    def draw_fits(self):
+        for index in range(self.number):
+            self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
+                           'k--', linewidth=self.linewidth)         
+        self.canvas.draw()
+        
+    def save_data(self):
+        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'Save Data As...')
+        z = np.hstack([np.repeat(self.z[i], len(self.x[i])) 
+                       for i in range(len(self.z))])
+        x = np.hstack(self.x) 
+        y = np.hstack(self.y)
+        np.savetxt(filename, np.column_stack((z,x,y)))
+
+            
+class MultipleLineCutsWindow(MultiPlotWindow):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle('Inspectra Gadget - Multiple Linecuts Window')
+ 
+    def init_widgets(self):
+        super().init_widgets()        
+        self.number_label = QtWidgets.QLabel('Number of lines:')
+        self.number_line_edit = QtWidgets.QLineEdit('5')
+        self.number_line_edit.setFixedSize(40,20)
+        self.all_lines_button = QtWidgets.QPushButton('All')
+        self.all_lines_button.setFixedSize(35,22)
+        self.check_specify_lines = QtWidgets.QCheckBox('Specify lines:')
+        self.check_specify_lines.clicked.connect(self.draw_plot)
+        self.specify_lines_edit = QtWidgets.QLineEdit('')
+
+    def init_connections(self):
+        super().init_connections()
+        self.number_line_edit.editingFinished.connect(self.draw_plot)
+        self.all_lines_button.clicked.connect(self.clicked_all_lines)
+        self.specify_lines_edit.editingFinished.connect(self.draw_plot)
+               
+    def init_layouts(self):
+        super().init_layouts()
+        self.lines_layout.addWidget(self.number_label)
+        self.lines_layout.addWidget(self.number_line_edit)
+        self.lines_layout.addWidget(self.all_lines_button)
+        self.lines_layout.addWidget(self.check_specify_lines)
+        self.lines_layout.addWidget(self.specify_lines_edit)
+           
+    def draw_plot(self):
+        self.running = True
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+        try:
+            self.offset = float(self.offset_line_edit.text())
+        except Exception as e:
+            print('Invalid offset value!', e)
             self.offset = 0
             self.offset_line_edit.setText('0')
         selected_colormap = cm.get_cmap(self.colormap_box.currentText())
         
-        if self.multiple_files:
-            self.x = np.stack([p.processed_data[0] for p in self.all_parents])
-            self.y = np.stack([p.processed_data[1] for p in self.all_parents])
-            self.labels = [p.filename for p in self.all_parents] # todo
-            self.number = len(self.all_parents)
-        else:
-            rows, cols = self.parent.processed_data[0].shape
-            self.number = int(self.number_line_edit.text())
-            if self.orientation == 'horizontal':
-                if self.check_specify_lines.checkState() == 0:
-                    indices = np.linspace(0, cols-1, self.number, dtype=int)
-                else:
-                    try:
-                        if ':' in self.specify_lines_edit.text():
-                            min_value = float(self.specify_lines_edit.text().split(':')[0])
-                            max_value = float(self.specify_lines_edit.text().split(':')[-1])
-                            min_index = np.argmin(np.abs(self.parent.processed_data[1][0,:]-min_value))
-                            max_index = np.argmin(np.abs(self.parent.processed_data[1][0,:]-max_value))
-                            indices = list(range(min_index,max_index+1))
-                        else:
-                            indices = [np.argmin(np.abs(self.parent.processed_data[1][0,:]-float(s))) for s in self.specify_lines_edit.text().split(',')]
-                        self.number = len(indices)
-                    except:
-                        indices = []
-                        self.number = 0
-                self.x = self.parent.processed_data[0][:,indices].transpose()
-                self.y = self.parent.processed_data[2][:,indices].transpose()
-                self.z = self.parent.processed_data[1][:,indices].transpose()
-            elif self.orientation == 'vertical':
-                if self.check_specify_lines.checkState() == 0:
-                    indices = np.linspace(0, rows-1, self.number, dtype=int)
-                else:
-                    try:
-                        if ':' in self.specify_lines_edit.text():
-                            min_value = float(self.specify_lines_edit.text().split(':')[0])
-                            max_value = float(self.specify_lines_edit.text().split(':')[-1])
-                            min_index = np.argmin(np.abs(self.parent.processed_data[0][:,0]-min_value))
-                            max_index = np.argmin(np.abs(self.parent.processed_data[0][:,0]-max_value))
-                            indices = list(range(min_index,max_index+1))
-                        else:
-                            indices = [np.argmin(np.abs(self.parent.processed_data[0][:,0]-float(s))) for s in self.specify_lines_edit.text().split(',')]
-                        self.number = len(indices)
-                    except:
-                        indices = []
-                        self.number = 0
-    
-                self.x = self.parent.processed_data[1][indices,:]
-                self.y = self.parent.processed_data[2][indices,:]
-                self.z = self.parent.processed_data[0][indices,:]
-            self.labels = ['{:.5g}'.format(self.z[i,0]) for i in range(self.number)]            
-        
+        rows, cols = self.parent.processed_data[0].shape
+        self.number = int(self.number_line_edit.text())
+        if self.orientation == 'horizontal':
+            if not self.check_specify_lines.checkState():
+                indices = np.linspace(0, cols-1, self.number, dtype=int)
+            else:
+                try:
+                    if ':' in self.specify_lines_edit.text():
+                        min_value = float(self.specify_lines_edit.text().split(':')[0])
+                        max_value = float(self.specify_lines_edit.text().split(':')[-1])
+                        min_index = np.argmin(np.abs(self.parent.processed_data[1][0,:]-min_value))
+                        max_index = np.argmin(np.abs(self.parent.processed_data[1][0,:]-max_value))
+                        indices = list(range(min_index,max_index+1))
+                    else:
+                        indices = [np.argmin(np.abs(self.parent.processed_data[1][0,:]-float(s))) 
+                                   for s in self.specify_lines_edit.text().split(',')]
+                    self.number = len(indices)
+                except Exception as e:
+                    print('Invalid lines specification!', e)
+                    indices = []
+                    self.number = 0
+            self.x = self.parent.processed_data[0][:,indices].transpose()
+            self.y = self.parent.processed_data[2][:,indices].transpose()
+            self.z = self.parent.processed_data[1][0,indices]
+            self.xlabel = self.parent.settings['xlabel']
+            self.zlabel = self.parent.settings['ylabel']
+        elif self.orientation == 'vertical':
+            if not self.check_specify_lines.checkState():
+                indices = np.linspace(0, rows-1, self.number, dtype=int)
+            else:
+                try:
+                    if ':' in self.specify_lines_edit.text():
+                        min_value = float(self.specify_lines_edit.text().split(':')[0])
+                        max_value = float(self.specify_lines_edit.text().split(':')[-1])
+                        min_index = np.argmin(np.abs(self.parent.processed_data[0][:,0]-min_value))
+                        max_index = np.argmin(np.abs(self.parent.processed_data[0][:,0]-max_value))
+                        indices = list(range(min_index,max_index+1))
+                    else:
+                        indices = [np.argmin(np.abs(self.parent.processed_data[0][:,0]-float(s))) 
+                                   for s in self.specify_lines_edit.text().split(',')]
+                    self.number = len(indices)
+                except Exception as e:
+                    print('Invalid lines specification!', e)
+                    indices = []
+                    self.number = 0
+
+            self.x = self.parent.processed_data[1][indices,:]
+            self.y = self.parent.processed_data[2][indices,:]
+            self.z = self.parent.processed_data[0][indices,0]
+            self.xlabel = self.parent.settings['ylabel']
+            self.zlabel = self.parent.settings['xlabel']
+        self.labels = [f'{self.z[i]:.5g}' for i in range(self.number)]            
+        self.ylabel = self.parent.settings['clabel']
+        self.title = ''
         line_colors = selected_colormap(np.linspace(0.1,0.9,self.number))
         for index in range(self.number):
             self.axes.plot(self.x[index], self.y[index]+index*self.offset, 
-                           color=line_colors[index], linewidth=self.linewidth, 
+                           color=line_colors[index], 
+                           linewidth=self.parent.settings['linewidth'], 
                            label=self.labels[index])
         if self.check_legend.checkState():
             self.axes.legend(title=self.zlabel)
-        self.cursor = Cursor(self.axes, useblit=True, color='grey', linewidth=0.5)
-        self.apply_plot_settings()
-              
-    def draw_fits(self):
-        if self.multiple:
-            for index in range(self.number):
-                self.axes.plot(self.x[index], self.y_fit[index]+index*self.offset, 
-                               'k--', linewidth=self.linewidth)
-        else:
-            self.axes.plot(self.x, self.y_fit, 'k--', linewidth=self.linewidth)            
-        self.canvas.draw()
-    
-    def apply_plot_settings(self):
+        self.cursor = Cursor(self.axes, useblit=True, 
+                             color='grey', linewidth=0.5)
         self.axes.set_xlabel(self.xlabel, size='xx-large')
         self.axes.set_ylabel(self.ylabel, size='xx-large')
         self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
         self.axes.set_title(self.title, size='x-large')
         self.canvas.draw()
-        
+
     def clicked_all_lines(self):
         rows, cols = self.parent.processed_data[0].shape
         if self.orientation == 'horizontal':
@@ -3096,98 +2427,12 @@ class LineCutWindow(QtWidgets.QWidget):
         elif self.orientation == 'vertical':
             number = rows
         self.number_line_edit.setText(str(number))
-        self.draw_plots()
+        self.draw_plot()        
+                
         
-    def closeEvent(self, event):
-        self.running = False
-        
-    def save_data(self):
-        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
-                self, 'Save Data As...')
-        if self.multiple:
-            data = np.array([self.z.flatten(), self.x.flatten(), self.y.flatten()])
-        else:
-            data = np.array([self.x, self.y])
-        np.savetxt(filename, data.T)
-        
-    def save_image(self):
-        formats = 'Portable Network Graphic (*.png);;Adobe Acrobat (*.pdf)'
-        filename, extension = QtWidgets.QFileDialog.getSaveFileName(
-                self, 'Save Figure As...', '', formats)
-        if filename:
-            print('Save Figure as '+filename+' ...')
-            if DARK_THEME and qdarkstyle_imported:
-                rcParams['axes.facecolor'] = 'white'
-                rcParams['axes.edgecolor'] = 'black'
-                rcParams['text.color'] = 'black'
-                rcParams['xtick.color'] = 'black'
-                rcParams['ytick.color'] = 'black'
-                rcParams['axes.labelcolor'] = 'black'
-                self.parent.update_linecut()
-            self.figure.savefig(filename)
-            if DARK_THEME and qdarkstyle_imported:
-                rcParams['axes.facecolor'] = DARK_COLOR
-                rcParams['axes.edgecolor'] = GREY_COLOR
-                rcParams['text.color'] = LIGHT_COLOR
-                rcParams['xtick.color'] = LIGHT_COLOR
-                rcParams['ytick.color'] = LIGHT_COLOR
-                rcParams['axes.labelcolor'] = LIGHT_COLOR
-                self.parent.update_linecut()
-            print('Saved!')
-    
-    def copy_image(self):
-        self.cursor.horizOn = False
-        self.cursor.vertOn = False            
-        self.canvas.draw()
-        if DARK_THEME and qdarkstyle_imported:
-            rcParams['axes.facecolor'] = 'white'
-            rcParams['axes.edgecolor'] = 'black'
-            rcParams['text.color'] = 'black'
-            rcParams['xtick.color'] = 'black'
-            rcParams['ytick.color'] = 'black'
-            rcParams['axes.labelcolor'] = 'black'
-            if self.multiple:
-                self.parent.update_multiple_linecuts()
-            else:
-                self.parent.update_linecut()           
-        buf = io.BytesIO()
-        self.figure.savefig(buf, dpi=300, transparent=True, bbox_inches='tight')
-        QtWidgets.QApplication.clipboard().setImage(QtGui.QImage.fromData(buf.getvalue()))
-        buf.close()
-        self.cursor.horizOn = True
-        self.cursor.vertOn = True                       
-        self.canvas.draw()
-        if DARK_THEME and qdarkstyle_imported:
-            rcParams['axes.facecolor'] = DARK_COLOR
-            rcParams['axes.edgecolor'] = GREY_COLOR
-            rcParams['text.color'] = LIGHT_COLOR
-            rcParams['xtick.color'] = LIGHT_COLOR
-            rcParams['ytick.color'] = LIGHT_COLOR
-            rcParams['axes.labelcolor'] = LIGHT_COLOR
-            if self.multiple:
-                self.parent.update_multiple_linecuts()
-            else:
-                self.parent.update_linecut() 
-            
-    def mouse_scroll_canvas(self, event):
-        if event.inaxes:
-            if len(self.parent.columns) == 3:
-                data_shape = self.parent.processed_data[0].shape
-                if self.parent.orientation == 'horizontal':
-                    new_index = self.parent.selected_indices[1]+int(event.step)
-                    if new_index >= 0 and new_index < data_shape[1]:
-                        self.parent.selected_indices[1] = new_index
-                elif self.parent.orientation == 'vertical':
-                    new_index = self.parent.selected_indices[0]+int(event.step)
-                    if new_index >= 0 and new_index < data_shape[0]:
-                        self.parent.selected_indices[0] = new_index
-                self.parent.update_linecut()
-                self.parent.canvas.draw()
-
-
-class ParametersWindow(QtWidgets.QWidget):
+class ParameterWindow(QtWidgets.QWidget):
     def __init__(self, x, y, xlabel, ylabel):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.resize(600, 600)
         self.vertical_layout = QtWidgets.QVBoxLayout()
         self.button_layout = QtWidgets.QHBoxLayout()
@@ -3198,10 +2443,9 @@ class ParametersWindow(QtWidgets.QWidget):
         self.x = x
         self.y = y
         self.axes.plot(self.x, self.y,'.')
-        self.axes.set_xlabel(xlabel, size=DEFAULT_PLOT_SETTINGS['labelsize'])
-        self.axes.set_ylabel(ylabel, size=DEFAULT_PLOT_SETTINGS['labelsize'])
-        self.axes.tick_params(labelsize=DEFAULT_PLOT_SETTINGS['ticksize'], color=rcParams['axes.edgecolor'])
-        self.canvas.draw()
+        self.axes.set_xlabel(xlabel, size='xx-large')
+        self.axes.set_ylabel(ylabel, size='xx-large')
+        self.axes.tick_params(labelsize='x-large', color=rcParams['axes.edgecolor'])
         self.figure.tight_layout(pad=2)
         self.canvas.draw()
         self.save_button = QtWidgets.QPushButton('Save')
@@ -3234,7 +2478,7 @@ class ParametersWindow(QtWidgets.QWidget):
             
 class FFTWindow(QtWidgets.QWidget):
     def __init__(self, fftdata):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.resize(600, 600)
         self.vertical_layout = QtWidgets.QVBoxLayout()
         self.figure = Figure()
@@ -3245,7 +2489,7 @@ class FFTWindow(QtWidgets.QWidget):
         self.image = self.axes.pcolormesh(self.fft, shading='auto', norm=LogNorm(vmin=self.fft.min(), vmax=self.fft.max()))
         self.cbar = self.figure.colorbar(self.image, orientation='vertical')
         self.figure.tight_layout(pad=2)
-        self.axes.tick_params(labelsize=DEFAULT_PLOT_SETTINGS['ticksize'], color=rcParams['axes.edgecolor'])
+        self.axes.tick_params(color=rcParams['axes.edgecolor'])
         self.canvas.draw()
         self.vertical_layout.addWidget(self.navi_toolbar)
         self.vertical_layout.addWidget(self.canvas)
@@ -3254,7 +2498,8 @@ class FFTWindow(QtWidgets.QWidget):
 
 class NoScrollQComboBox(QtWidgets.QComboBox):
     def __init__(self, *args, **kwargs):
-        super(NoScrollQComboBox, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
     def wheelEvent(self, *args, **kwargs):
         if self.hasFocus():
@@ -3285,34 +2530,36 @@ class NavigationToolbarMod(NavigationToolbar):
 
 class DraggablePoint:
     lock = None #  only one can be animated at a time
-    def __init__(self, parent, x, y, draw_line=True, draw_circle=False):
+    def __init__(self, parent, x, y, draw_line=False, draw_circle=False):
         self.parent = parent
-        self.axes = parent.axes
-        self.draw_line = draw_line
-        self.draw_circle = draw_circle
         
-        x_lb, x_ub = self.axes.get_xlim()
-        y_lb, y_ub = self.axes.get_ylim()
+        x_lb, x_ub = self.parent.axes.get_xlim()
+        y_lb, y_ub = self.parent.axes.get_ylim()
         
-        self.point = patches.Ellipse((x, y), (x_ub-x_lb)*0.01, (y_ub-y_lb)*0.01, fc='k', alpha=1, edgecolor='k')
+        self.point = patches.Ellipse((x, y), (x_ub-x_lb)*0.02, 
+                                     (y_ub-y_lb)*0.02, fc='k', 
+                                     alpha=1, edgecolor='k')
         self.x = x
         self.y = y
-        self.axes.add_patch(self.point)
+        self.parent.axes.add_patch(self.point)
         self.press = None
         self.background = None
         self.connect()
         
-        if self.parent.list_points and self.draw_line:
-            line_x = [self.parent.list_points[0].x, self.x]
-            line_y = [self.parent.list_points[0].y, self.y]
-            self.line = Line2D(line_x, line_y, color=self.parent.settings['linecolor'], alpha=1.0, linestyle='dashed', linewidth=1)
-            self.axes.add_line(self.line)
-        if len(self.parent.list_points) > 1 and self.draw_circle:
-            x0, y0 = self.parent.list_points[0].x, self.parent.list_points[0].y
-            x1, y1 = self.parent.list_points[1].x, self.y
-            self.circle = patches.Ellipse((x0, y0), 2*(x1-x0), 2*(y1-y0), fc='none', alpha=None, 
-                                          linestyle='dashed', linewidth=1, edgecolor='k')
-            self.axes.add_patch(self.circle)
+        if draw_line:
+            line_x = [self.parent.linecut_points[0].x, self.x]
+            line_y = [self.parent.linecut_points[0].y, self.y]
+            self.line = Line2D(line_x, line_y, 
+                               color=self.parent.settings['linecolor'], 
+                               alpha=1.0, linestyle='dashed', linewidth=1)
+            self.parent.axes.add_line(self.line)
+        if draw_circle:
+            x0, y0 = self.parent.linecut_points[0].x, self.parent.linecut_points[0].y
+            x1, y1 = self.parent.linecut_points[1].x, self.y
+            self.circle = patches.Ellipse((x0, y0), 2*(x1-x0), 2*(y1-y0), 
+                                          fc='none', alpha=None, linestyle='dashed', 
+                                          linewidth=1, edgecolor='k')
+            self.parent.axes.add_patch(self.circle)
 
     def connect(self):
         self.cidpress = self.point.figure.canvas.mpl_connect('button_press_event', self.on_press)
@@ -3324,26 +2571,28 @@ class DraggablePoint:
         if DraggablePoint.lock is not None: return
         contains, attrd = self.point.contains(event)
         if not contains: return
+        self.parent.cursor.horizOn = False
+        self.parent.cursor.vertOn = False 
         self.press = (self.point.center), event.xdata, event.ydata
         DraggablePoint.lock = self
         canvas = self.point.figure.canvas
         axes = self.point.axes
         self.point.set_animated(True)
-        if len(self.parent.list_points) > 1 and self.draw_line:
-            if self == self.parent.list_points[1]:
+        if hasattr(self.parent.linecut_points[1], 'line'):
+            if self == self.parent.linecut_points[1]:
                 self.line.set_animated(True)
             else:
-                self.parent.list_points[1].line.set_animated(True)
-        if len(self.parent.list_points) > 2 and self.draw_circle:
-            if self == self.parent.list_points[2]:
+                self.parent.linecut_points[1].line.set_animated(True)
+        if (len(self.parent.linecut_points) > 2 and 
+            hasattr(self.parent.linecut_points[2], 'circle')):
+            if self == self.parent.linecut_points[2]:
                 self.circle.set_animated(True)
             else:
-                self.parent.list_points[2].circle.set_animated(True)
+                self.parent.linecut_points[2].circle.set_animated(True)
         canvas.draw()
         self.background = canvas.copy_from_bbox(self.point.axes.bbox)
         axes.draw_artist(self.point)
         canvas.blit(axes.bbox)
-
 
     def on_motion(self, event):
         if DraggablePoint.lock is not self:
@@ -3352,86 +2601,108 @@ class DraggablePoint:
         self.point.center, xpress, ypress = self.press
         dx = event.xdata - xpress
         dy = event.ydata - ypress
-        if self.draw_circle:
-            if self == self.parent.list_points[1]:
+        if (len(self.parent.linecut_points) > 2 and 
+            hasattr(self.parent.linecut_points[2], 'circle')):
+            if self == self.parent.linecut_points[1]:
                 dy = 0
-            elif self == self.parent.list_points[2]:
+            elif self == self.parent.linecut_points[2]:
                 dx = 0
         self.point.center = (self.point.center[0]+dx, self.point.center[1]+dy)
+        self.x = self.point.center[0]
+        self.y = self.point.center[1]
         canvas = self.point.figure.canvas
         axes = self.point.axes
         canvas.restore_region(self.background)
         axes.draw_artist(self.point)
-        if len(self.parent.list_points) > 1 and self.draw_line:
-            if self == self.parent.list_points[1]:
+        if hasattr(self.parent.linecut_points[1], 'line'):
+            if self == self.parent.linecut_points[1]:
+                self.line.set_animated(True)
                 axes.draw_artist(self.line)
-            else:
-                self.parent.list_points[1].line.set_animated(True)
-                axes.draw_artist(self.parent.list_points[1].line)
-        if len(self.parent.list_points) > 2 and self.draw_circle:
-            if self == self.parent.list_points[2]:
-                axes.draw_artist(self.circle)
-            else:
-                self.parent.list_points[2].circle.set_animated(True)
-                axes.draw_artist(self.parent.list_points[2].circle)
-        self.x = self.point.center[0]
-        self.y = self.point.center[1]
-        if len(self.parent.list_points) > 1 and self.draw_line:
-            if self == self.parent.list_points[1]:
-                line_x = [self.parent.list_points[0].x, self.x]
-                line_y = [self.parent.list_points[0].y, self.y]
+                line_x = [self.parent.linecut_points[0].x, self.x]
+                line_y = [self.parent.linecut_points[0].y, self.y]
                 self.line.set_data(line_x, line_y)
             else:
-                line_x = [self.x, self.parent.list_points[1].x]
-                line_y = [self.y, self.parent.list_points[1].y]
-                self.parent.list_points[1].line.set_data(line_x, line_y)
-        elif len(self.parent.list_points) > 2 and self.draw_circle:
-            if self == self.parent.list_points[2]:
-                self.circle.height = 2*(self.y-self.parent.list_points[0].y)
-            elif self == self.parent.list_points[1]:
-                self.parent.list_points[2].circle.width = 2*(self.x-self.parent.list_points[0].x)
+                self.parent.linecut_points[1].line.set_animated(True)
+                axes.draw_artist(self.parent.linecut_points[1].line)
+                line_x = [self.x, self.parent.linecut_points[1].x]
+                line_y = [self.y, self.parent.linecut_points[1].y]
+                self.parent.linecut_points[1].line.set_data(line_x, line_y)
+        if (len(self.parent.linecut_points) > 2 and 
+            hasattr(self.parent.linecut_points[2], 'circle')):
+            if self == self.parent.linecut_points[2]:
+                self.circle.set_animated(True)
+                axes.draw_artist(self.circle)
+                self.circle.height = 2*(self.y-self.parent.linecut_points[0].y)
+            elif self == self.parent.linecut_points[1]:
+                self.parent.linecut_points[2].circle.set_animated(True)
+                axes.draw_artist(self.parent.linecut_points[2].circle)
+                self.parent.linecut_points[2].circle.width = 2*(self.x-self.parent.linecut_points[0].x)
             else:
-                self.parent.list_points[2].circle.set_center((self.x, self.y))
+                self.parent.linecut_points[2].circle.set_animated(True)
+                axes.draw_artist(self.parent.linecut_points[2].circle)
+                self.parent.linecut_points[2].circle.set_center((self.x, self.y))
         canvas.blit(axes.bbox)
 
 
     def on_release(self, event):
         if DraggablePoint.lock is not self:
             return
+        self.parent.cursor.horizOn = True
+        self.parent.cursor.vertOn = True
         self.press = None
         DraggablePoint.lock = None
         self.point.set_animated(False)
-        if len(self.parent.list_points) > 1 and self.draw_line:
-            if self == self.parent.list_points[1]:
+        if hasattr(self.parent.linecut_points[1], 'line'):
+            if self == self.parent.linecut_points[1]:
                 self.line.set_animated(False)
             else:
-                self.parent.list_points[1].line.set_animated(False)
-        if len(self.parent.list_points) > 2 and self.draw_circle:
-            if self == self.parent.list_points[2]:
+                self.parent.linecut_points[1].line.set_animated(False)
+        if (len(self.parent.linecut_points) > 2 and 
+            hasattr(self.parent.linecut_points[2], 'circle')):
+            if self == self.parent.linecut_points[2]:
                 self.circle.set_animated(False)
+            elif self == self.parent.linecut_points[1]:
+                self.parent.linecut_points[2].circle.set_animated(False) 
             else:
-                self.parent.list_points[2].circle.set_animated(False)
-            if self == self.parent.list_points[0]:
-                circle = self.parent.list_points[2].circle
-                self.parent.list_points[1].point.center = (circle.center[0]+0.5*circle.width, circle.center[1])
-                self.parent.list_points[2].point.center = (circle.center[0],circle.center[1]+0.5*circle.height)
-                self.parent.list_points[1].x = self.parent.list_points[1].point.center[0]
-                self.parent.list_points[1].y = self.parent.list_points[1].point.center[1]
-                self.parent.list_points[2].x = self.parent.list_points[2].point.center[0]
-                self.parent.list_points[2].y = self.parent.list_points[2].point.center[1]
+                self.parent.linecut_points[2].circle.set_animated(False)
+            if self == self.parent.linecut_points[0]:
+                circle = self.parent.linecut_points[2].circle
+                self.parent.linecut_points[1].point.center = (circle.center[0]+0.5*circle.width, circle.center[1])
+                self.parent.linecut_points[2].point.center = (circle.center[0],circle.center[1]+0.5*circle.height)
+                self.parent.linecut_points[1].x = self.parent.linecut_points[1].point.center[0]
+                self.parent.linecut_points[1].y = self.parent.linecut_points[1].point.center[1]
+                self.parent.linecut_points[2].x = self.parent.linecut_points[2].point.center[0]
+                self.parent.linecut_points[2].y = self.parent.linecut_points[2].point.center[1]
         self.background = None
         self.point.figure.canvas.draw()
         self.x = self.point.center[0]
         self.y = self.point.center[1]
-        if len(self.parent.list_points) > 1:
-            self.parent.update_linecut()
-            self.parent.linecut_window.activateWindow()
+        self.update()
+        self.parent.linecut_window.activateWindow()
 
     def disconnect(self):
         self.point.figure.canvas.mpl_disconnect(self.cidpress)
         self.point.figure.canvas.mpl_disconnect(self.cidrelease)
         self.point.figure.canvas.mpl_disconnect(self.cidmotion)
-        
+ 
+def rcParams_to_dark_theme():
+    rcParams['text.color'] = LIGHT_COLOR
+    rcParams['xtick.color'] = LIGHT_COLOR
+    rcParams['ytick.color'] = LIGHT_COLOR
+    rcParams['axes.facecolor'] = DARK_COLOR
+    rcParams['axes.edgecolor'] = GREY_COLOR
+    rcParams['axes.labelcolor'] = LIGHT_COLOR
+    
+def rcParams_to_light_theme():
+    rcParams['text.color'] = 'black'
+    rcParams['xtick.color'] = 'black'
+    rcParams['ytick.color'] = 'black'
+    rcParams['axes.facecolor'] = 'white'
+    rcParams['axes.edgecolor'] = 'black'
+    rcParams['axes.labelcolor'] = 'black' 
+
+import qd_extension
+import qcodes_extension
     
 def main():
     app = QtWidgets.QApplication(sys.argv)

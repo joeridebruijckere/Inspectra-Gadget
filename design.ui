@@ -704,7 +704,7 @@
      <x>0</x>
      <y>0</y>
      <width>1400</width>
-     <height>21</height>
+     <height>26</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_save_session">
@@ -715,13 +715,6 @@
     <addaction name="action_all_files"/>
     <addaction name="action_checked_files"/>
     <addaction name="action_filters"/>
-   </widget>
-   <widget class="QMenu" name="menu_merge_data">
-    <property name="title">
-     <string>Merge Data</string>
-    </property>
-    <addaction name="action_merge_raw"/>
-    <addaction name="action_merge_processed"/>
    </widget>
    <widget class="QMenu" name="menu_open_folder">
     <property name="title">
@@ -747,8 +740,16 @@
     <addaction name="action_link_to_folder"/>
     <addaction name="action_unlink_folder"/>
    </widget>
+   <widget class="QMenu" name="menuCombine_Plots">
+    <property name="title">
+     <string>Plot Actions</string>
+    </property>
+    <addaction name="action_combine_files"/>
+    <addaction name="action_duplicate_file"/>
+    <addaction name="action_save_data_selected_file"/>
+   </widget>
    <addaction name="menu_save_session"/>
-   <addaction name="menu_merge_data"/>
+   <addaction name="menuCombine_Plots"/>
    <addaction name="menu_open_folder"/>
    <addaction name="menu_apply_preset"/>
    <addaction name="menuLink"/>
@@ -956,6 +957,21 @@
   <action name="action_live_tracking">
    <property name="text">
     <string>Live Tracking...</string>
+   </property>
+  </action>
+  <action name="action_combine_files">
+   <property name="text">
+    <string>Combine Checked Files...</string>
+   </property>
+  </action>
+  <action name="action_duplicate_file">
+   <property name="text">
+    <string>Duplicate Selected File...</string>
+   </property>
+  </action>
+  <action name="action_save_data_selected_file">
+   <property name="text">
+    <string>Save Data Selected File...</string>
    </property>
   </action>
  </widget>

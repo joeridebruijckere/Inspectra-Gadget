@@ -24,10 +24,10 @@ def get_function(function_name):
     return functions[function_name]
 
 def estimate_parameters(function_name, x, y):
-    fwhm = 0.1*(max(x)-min(x))
-    height = max(y)-min(y)
-    middle = 0.5*(max(x)+min(x))
-    background = min(y)
+    fwhm = 0.1*(np.amax(x)-np.amin(x))
+    height = np.amax(y)-np.amin(y)
+    middle = 0.5*(np.amax(x)+np.amin(x))
+    background = np.amin(y)
     estimated_parameters = [fwhm, height, middle, background]
     if function_name == 'Fano':
         q = 1
