@@ -21,11 +21,12 @@ import main
 DEFAULT_CHANNEL = 'lockin_curr/X' # Channel shown by default
 CONVERT_MICROSIEMENS_TO_ESQUAREDH = True # Whether or not to convert dI/dV from uS to e^2/h by default
 DEFAULT_RC_FILTER_CORRECT = True # Whether or not to apply RC-filter correction by default
-DEFAULT_RC_FILTER_VALUE = 8240
+DEFAULT_RC_FILTER_VALUE = 8240 # Default value of the total RC-filer resistance (Ohm)
 DEFAULT_SHOW_FULL_RANGE = False # Adjust limits of plot to its final size by default
-DEFAULT_SHOW_SETTINGS_LIST = True
-CHANNELS_TO_SHOW = ['source', 'pg1', 'pg2', 'cg1', 'cg2', 'bg', 'Bx', 'Bz', 'T']
+DEFAULT_SHOW_SETTINGS_LIST = False # Show a list of the values of the other channels as specified by CHANNELS_TO_SHOW
+CHANNELS_TO_SHOW = ['source', 'pg1', 'pg2', 'cg1', 'cg2', 'bg', 'sg', 'Bx', 'Bz', 'T']
 
+# These channels will have their corresponding axis label automatically replaced by the name and unit in this dictionary
 LABEL_DICT = {'source': ('Bias voltage', '(mV)'), 
               'dc_curr': ('Current', '(nA)'), 
               'lockin_curr/X': ('d$I$/d$V$', '($e^2/h$)'),

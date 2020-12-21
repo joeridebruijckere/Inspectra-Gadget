@@ -4,7 +4,7 @@ Inspectra-Gadget
 
 Author: Joeri de Bruijckere
 
-Last updated on Nov 27 2020
+Last updated on Dec 8 2020
 
 """
 
@@ -150,7 +150,8 @@ SETTINGS_MENU_OPTIONS['ylabel'] = ['Bias voltage (mV)',
                                    'Gate voltage (V)', 
                                    '$V_{\mathrm{g}}$ (V)', 
                                    'd$I$/d$V$ (μS)', 
-                                   'd$I$/d$V$ $(e^{2}/h)$', 
+                                   'd$I$/d$V$ $(e^{2}/h)$',
+                                   '(d$I$/d$V$ $(e^{2}/h)$)$^{1/4}$',
                                    'Angle (degrees)', 
                                    'Temperature (mK)']
 SETTINGS_MENU_OPTIONS['clabel'] = ['$I$ (nA)', 
@@ -160,6 +161,7 @@ SETTINGS_MENU_OPTIONS['clabel'] = ['$I$ (nA)',
                                    'd$I$/d$V$ ($G_0$)', 
                                    'd$I$/d$V$ (a.u.)', 
                                    'd$I$/d$V$ $(e^{2}/h)$', 
+                                   '(d$I$/d$V$ $(e^{2}/h)$)$^{1/4}$',
                                    'log$^{10}$(d$I$/d$V$ $(e^{2}/h)$)', 
                                    'd$^2I$/d$V^2$ (a.u.)', 
                                    '|d$^2I$/d$V^2$| (a.u.)']
@@ -270,6 +272,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.action_save_data_selected_file.triggered.connect(self.save_processed_data)
         self.track_button.clicked.connect(self.track_button_clicked)
         self.action_open_files_from_folder.triggered.connect(self.open_files_from_folder)
+        self.action_save_files_as_PNG.triggered.connect(lambda: self.save_images_as('.png'))
+        self.action_save_files_as_PDF.triggered.connect(lambda: self.save_images_as('.pdf'))
         self.action_preset_0.triggered.connect(lambda: self.apply_preset(0))
         self.action_preset_1.triggered.connect(lambda: self.apply_preset(1))
         self.action_preset_2.triggered.connect(lambda: self.apply_preset(2))
@@ -840,12 +844,21 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def combine_plots(self):
         checked_items = self.get_checked_items()
         if checked_items:
-            data_list = []
-            for item in checked_items:
-                data_list.append(item.data)
-            self.multi_plot_window = MultiPlotWindow(data_list)
-            self.multi_plot_window.draw_plot()
-            self.multi_plot_window.show()
+            try:
+                data_list = []
+                three_dimensional_data = False
+                for item in checked_items:
+                    data_list.append(item.data)
+                    if len(item.data.get_columns()) != 2:
+                        three_dimensional_data = True
+                if not three_dimensional_data:
+                    self.multi_plot_window = MultiPlotWindow(data_list)
+                    self.multi_plot_window.draw_plot()
+                    self.multi_plot_window.show()
+                else:
+                    print('Cannot combine three-dimensional data...')
+            except Exception as e:
+                print('Cannot combine data...', e)
     
     def open_plot_settings_menu(self):
         row = self.settings_table.currentRow()
@@ -961,7 +974,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
     def save_image(self):
         current_item = self.file_list.currentItem()
         if current_item:
-            data_name, _ = os.path.splitext(current_item.data.filepath)
+            data_name, _ = os.path.splitext(current_item.data.label)
             formats = 'Adobe Acrobat (*.pdf);;Portable Network Graphic (*.png)'
             filename, extension = QtWidgets.QFileDialog.getSaveFileName(
                     self, 'Save Figure As...', data_name.replace(':',''), formats)
@@ -970,7 +983,7 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 if current_item.data.settings['dpi'] == 'figure':
                     dpi = 'figure'
                 else:
-                    dpi = current_item.data.settings['dpi'] 
+                    dpi = int(current_item.data.settings['dpi']) 
                 if DARK_THEME and qdarkstyle_imported:             
                     rcParams_to_light_theme()
                     self.update_plots(update_data=False)
@@ -994,9 +1007,8 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
         if current_item:
             filename, _ = QtWidgets.QFileDialog.getOpenFileNames(
                     self, 'Open Filters File...', '', '*.npy')
-            loaded_filters = np.load(filename[0], allow_pickle=True)
-            current_item.data.filters = copy.deepcopy(loaded_filters)
-            self.show_current_filters()
+            loaded_filters = list(np.load(filename[0], allow_pickle=True))
+            current_item.data.filters += copy.deepcopy(loaded_filters)
             current_item.data.apply_all_filters()
             self.update_plots()
             self.show_current_view_settings()
@@ -1031,7 +1043,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             print('Saved!')
     
     def open_files_from_folder(self): 			
-        self.file_list.itemChanged.disconnect(self.file_checked)
         rootdir = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
         filepaths = []
         for subdir, dirs, files in os.walk(rootdir):
@@ -1041,7 +1052,75 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     filepath = os.path.join(subdir, file)
                     filepaths.append((os.stat(filepath)[ST_CTIME],filepath))
         filepaths.sort(key=lambda tup: tup[0])
-        self.open_files(filepaths)
+        self.open_files([file[1] for file in filepaths])
+        
+    def save_images_as(self, extension='.png'):
+        save_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
+        if save_folder: 
+            if DARK_THEME and qdarkstyle_imported:
+                rcParams_to_light_theme()
+                self.update_plots(update_data=False)
+            for index in range(self.file_list.count()):
+                self.figure.clear()
+                item = self.file_list.item(index)
+                filename = os.path.join(save_folder, item.data.label.replace(':','')+extension)
+                if not os.path.isfile(filename):
+                    try:
+                        item.data.prepare_data_for_plot()
+                        item.data.figure = self.figure
+                        item.data.axes = self.figure.add_subplot(1, 1, 1)
+                        item.data.add_plot(dim=len(item.data.get_columns()))
+                        if item.data.settings['dpi'] == 'figure':
+                            dpi = 'figure'
+                        else:
+                            dpi = int(item.data.settings['dpi']) 
+                        transparent = item.data.settings['transparent']=='True'
+                        self.figure.savefig(filename, dpi=dpi, 
+                                            transparent=transparent,
+                                            bbox_inches='tight')
+                        item.data.raw_data = None
+                        item.data.processed_data = None
+                    except Exception as e:
+                        print(f'Could not plot {item.data.filepath}...', e)
+            if DARK_THEME and qdarkstyle_imported:
+                rcParams_to_dark_theme()
+                self.update_plots(update_data=False)
+                
+    # def save_images_as(self, extension='.png'):
+    #     save_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
+    #     if save_folder: 
+    #         if DARK_THEME and qdarkstyle_imported:
+    #             rcParams_to_light_theme()
+    #             self.update_plots(update_data=False)
+    #         for index in range(self.file_list.count()):
+    #             self.figure.clear()
+    #             item = self.file_list.item(index)
+    #             filename = os.path.join(save_folder, item.data.label.replace(':','')+' [4th root]'+extension)
+    #             if not os.path.isfile(filename):
+    #                 try:
+    #                     item.data.prepare_data_for_plot()
+    #                     if len(item.data.get_columns()) == 3:
+    #                         item.data.filters.append(Filter('Root', settings=['4',''], checkstate=True))
+    #                         item.data.settings['clabel'] = '(d$I$/d$V$)$^{1/4}$'
+    #                         item.data.apply_all_filters()
+    #                         item.data.figure = self.figure
+    #                         item.data.axes = self.figure.add_subplot(1, 1, 1)
+    #                         item.data.add_plot(dim=len(item.data.get_columns()))
+    #                         if item.data.settings['dpi'] == 'figure':
+    #                             dpi = 'figure'
+    #                         else:
+    #                             dpi = int(item.data.settings['dpi']) 
+    #                         transparent = item.data.settings['transparent']=='True'
+    #                         self.figure.savefig(filename, dpi=dpi, 
+    #                                             transparent=transparent,
+    #                                             bbox_inches='tight')
+    #                         item.data.raw_data = None
+    #                         item.data.processed_data = None
+    #                 except Exception as e:
+    #                     print(f'Could not plot {item.data.filepath}...', e)
+    #         if DARK_THEME and qdarkstyle_imported:
+    #             rcParams_to_dark_theme()
+    #             self.update_plots(update_data=False) 
         
     def update_link_to_folder(self, new_folder=True):
         if new_folder:
@@ -1544,7 +1623,7 @@ class BaseClassData:
                                        bottom=float(filt.settings[0]))
         if ('Crop X' in [filt.name for filt in self.filters]):
             crop_filters = [filt for filt in self.filters 
-                            if filt.name == 'Crop Y']
+                            if filt.name == 'Crop X']
             for filt in crop_filters:
                 if filt.method == 'Lim' and filt.checkstate:
                     self.axes.set_xlim(left=float(filt.settings[0]), 
@@ -2677,7 +2756,7 @@ class DraggablePoint:
         self.point.figure.canvas.draw()
         self.x = self.point.center[0]
         self.y = self.point.center[1]
-        self.update()
+        self.parent.linecut_window.update()
         self.parent.linecut_window.activateWindow()
 
     def disconnect(self):
