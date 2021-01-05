@@ -1050,7 +1050,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 filename, file_extension = os.path.splitext(file)
                 if file_extension == '.dat':
                     filepath = os.path.join(subdir, file)
-                    filepaths.append((os.stat(filepath)[ST_CTIME],filepath))
+                    try: # on Windows
+                        st_ctime = os.path.getctime(filepath)
+                    except Exception:
+                        try: # on Mac
+                            st_ctime = os.stat(filepath).st_birthtime
+                        except Exception as e:
+                            print(e)
+                    filepaths.append((st_ctime,filepath))
         filepaths.sort(key=lambda tup: tup[0])
         self.open_files([file[1] for file in filepaths])
         
@@ -1085,42 +1092,6 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
             if DARK_THEME and qdarkstyle_imported:
                 rcParams_to_dark_theme()
                 self.update_plots(update_data=False)
-                
-    # def save_images_as(self, extension='.png'):
-    #     save_folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory")
-    #     if save_folder: 
-    #         if DARK_THEME and qdarkstyle_imported:
-    #             rcParams_to_light_theme()
-    #             self.update_plots(update_data=False)
-    #         for index in range(self.file_list.count()):
-    #             self.figure.clear()
-    #             item = self.file_list.item(index)
-    #             filename = os.path.join(save_folder, item.data.label.replace(':','')+' [4th root]'+extension)
-    #             if not os.path.isfile(filename):
-    #                 try:
-    #                     item.data.prepare_data_for_plot()
-    #                     if len(item.data.get_columns()) == 3:
-    #                         item.data.filters.append(Filter('Root', settings=['4',''], checkstate=True))
-    #                         item.data.settings['clabel'] = '(d$I$/d$V$)$^{1/4}$'
-    #                         item.data.apply_all_filters()
-    #                         item.data.figure = self.figure
-    #                         item.data.axes = self.figure.add_subplot(1, 1, 1)
-    #                         item.data.add_plot(dim=len(item.data.get_columns()))
-    #                         if item.data.settings['dpi'] == 'figure':
-    #                             dpi = 'figure'
-    #                         else:
-    #                             dpi = int(item.data.settings['dpi']) 
-    #                         transparent = item.data.settings['transparent']=='True'
-    #                         self.figure.savefig(filename, dpi=dpi, 
-    #                                             transparent=transparent,
-    #                                             bbox_inches='tight')
-    #                         item.data.raw_data = None
-    #                         item.data.processed_data = None
-    #                 except Exception as e:
-    #                     print(f'Could not plot {item.data.filepath}...', e)
-    #         if DARK_THEME and qdarkstyle_imported:
-    #             rcParams_to_dark_theme()
-    #             self.update_plots(update_data=False) 
         
     def update_link_to_folder(self, new_folder=True):
         if new_folder:
@@ -1135,7 +1106,14 @@ class Editor(QtWidgets.QMainWindow, design.Ui_MainWindow):
                     if file_extension == '.dat':
                         filepath = os.path.join(subdir, file)
                         if filepath not in self.linked_files:
-                            new_files.append((os.stat(filepath)[ST_CTIME],filepath))
+                            try: # on Windows
+                                st_ctime = os.path.getctime(filepath)
+                            except Exception:
+                                try: # on Mac
+                                    st_ctime = os.stat(filepath).st_birthtime
+                                except Exception as e:
+                                    print(e)
+                            new_files.append((st_ctime,filepath))
             if new_files:
                 new_files.sort(key=lambda tup: tup[0])
                 new_filepaths = [new_file[1] for new_file in new_files]
